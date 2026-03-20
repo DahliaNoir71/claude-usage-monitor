@@ -37,17 +37,31 @@ const APP = {
     const mainContent = document.getElementById('mainContent');
     mainContent.innerHTML = this.loadedModules[tabName];
 
-    // Execute module initialization script if it exists
-    const script = mainContent.querySelector('script');
-    if (script) {
-      // Create a new function from the script content and execute it
-      // This allows each module to have its own initialization
-      const initFunc = new Function(script.textContent);
-      try {
-        initFunc.call(window);
-      } catch (e) {
-        console.error(`Error initializing ${tabName}:`, e);
+    // Call module initialization directly (innerHTML doesn't execute scripts)
+    try {
+      switch(tabName) {
+        case 'overview':
+          window.loadOverview?.();
+          break;
+        case 'history':
+          window.loadHistory?.();
+          break;
+        case 'cycles':
+          window.loadCycles?.();
+          break;
+        case 'claude-code':
+          window.loadClaudeCodeData?.();
+          break;
+        case 'plans':
+          window.loadPlans?.();
+          break;
+        case 'settings':
+          window.loadSettings?.();
+          window.loadClaudeCodeSettings?.();
+          break;
       }
+    } catch (e) {
+      console.error(`Error initializing ${tabName}:`, e);
     }
 
     this.currentTab = tabName;
