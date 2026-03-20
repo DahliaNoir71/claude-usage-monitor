@@ -10,6 +10,13 @@ from pathlib import Path
 
 logger = logging.getLogger("monitor.scraper")
 
+# Last scrape status, accessible from server
+last_scrape_info: dict = {
+    "status": None,       # "success", "cloudflare_blocked", "extraction_failed", "timeout", "login_required", "error"
+    "error": None,
+    "timestamp": None,
+}
+
 # JavaScript extraction logic shared by both scraper modes
 _EXTRACT_JS = """
 () => {
@@ -177,6 +184,13 @@ async def _wait_for_cloudflare(page, max_wait: int = 30) -> bool:
     return False
 
 
+def _update_scrape_status(status: str, error: str | None = None):
+    from datetime import datetime
+    last_scrape_info["status"] = status
+    last_scrape_info["error"] = error
+    last_scrape_info["timestamp"] = datetime.now().isoformat()
+
+
 async def scrape_usage_simple(headless: bool = True, timeout: int = 60, max_retries: int = 2) -> dict | None:
     """Scrape using a dedicated Playwright profile.
     Retries headless attempts with backoff before falling back to visible browser."""
@@ -188,6 +202,7 @@ async def scrape_usage_simple(headless: bool = True, timeout: int = 60, max_retr
     profile_dir.mkdir(parents=True, exist_ok=True)
     target_url = "https://claude.ai/settings/usage"
     backoff_delays = [5, 15]  # seconds between retries
+    last_failure_reason = None
 
     try:
         async with async_playwright() as p:
@@ -213,9 +228,11 @@ async def scrape_usage_simple(headless: bool = True, timeout: int = 60, max_retr
                     logger.info(f"Headless landed on: {current_url}")
 
                     if not cf_cleared:
+                        last_failure_reason = "cloudflare_blocked"
                         logger.warning(f"Attempt {attempt}: Cloudflare not cleared")
                         await browser.close()
                     elif "/settings" not in current_url:
+                        last_failure_reason = "login_required"
                         logger.warning(f"Attempt {attempt}: redirected away from settings (login required?)")
                         await browser.close()
                     else:
@@ -224,11 +241,14 @@ async def scrape_usage_simple(headless: bool = True, timeout: int = 60, max_retr
                         logger.info(f"Extract result: {result}")
                         if result and result.get("allModels") is not None:
                             await browser.close()
+                            _update_scrape_status("success")
                             return result
+                        last_failure_reason = "extraction_failed"
                         logger.warning(f"Attempt {attempt}: extraction returned no data")
                         await browser.close()
 
                 except Exception as e:
+                    last_failure_reason = "timeout" if "Timeout" in str(e) else "error"
                     logger.warning(f"Attempt {attempt} error: {e}")
                     try:
                         await browser.close()
@@ -274,9 +294,13 @@ async def scrape_usage_simple(headless: bool = True, timeout: int = 60, max_retr
             await browser.close()
 
             if result and result.get("allModels") is not None:
+                _update_scrape_status("success")
                 return result
+
+            _update_scrape_status(last_failure_reason or "extraction_failed", "All attempts failed")
             return None
 
     except Exception as e:
+        _update_scrape_status("error", str(e))
         logger.error(f"Simple scraper error: {e}")
         return None

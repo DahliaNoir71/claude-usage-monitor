@@ -55,6 +55,7 @@ async def dashboard():
 
 @app.get("/api/status")
 async def status():
+    from .scraper import last_scrape_info
     config = load_config()
     return {
         "app": APP_NAME,
@@ -63,6 +64,9 @@ async def status():
         "entries_count": db.entry_count(),
         "latest": db.get_latest_entry(),
         "data_dir": str(DATA_DIR),
+        "last_scrape_status": last_scrape_info.get("status"),
+        "last_scrape_error": last_scrape_info.get("error"),
+        "last_scrape_timestamp": last_scrape_info.get("timestamp"),
     }
 
 
