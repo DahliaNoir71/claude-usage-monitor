@@ -88,10 +88,11 @@ uv run python -m claude_usage_monitor
    └─→ Stocke en base + export CSV si activé
 
 📊 Dashboard (http://127.0.0.1:8420) :
-   ├─ Vue d'ensemble : métriques, recommandation, graphiques
-   ├─ Historique : timeline, resets, entrées brutes
-   ├─ Plans : comparaison, simulateur d'économies
-   └─ Paramètres : plan, intervalle, import/export
+   ├─ Vue d'ensemble : KPI mensuelles, recommandation, countdown reset
+   ├─ Historique : timeline, pagination, filtre par mois
+   ├─ Cycles : peaks mensuels/hebdomadaires, cycles Sonnet, resets
+   ├─ Plans : comparaison interactive, simulateur d'usage
+   └─ Paramètres : plan, intervalle, seuils alertes, notifications
 ```
 
 ### System tray (Windows)
@@ -108,10 +109,15 @@ Au premier scraping, si aucune session n'existe, un navigateur visible s'ouvre p
 | Endpoint | Méthode | Description |
 |----------|---------|-------------|
 | `/api/status` | GET | État de l'app |
-| `/api/analysis` | GET | Analyse + recommandation |
+| `/api/analysis` | GET | Analyse + recommandation (mensuelle) |
 | `/api/entries` | GET | Entrées (`?days=7&limit=100`) |
 | `/api/daily` | GET | Résumés quotidiens |
 | `/api/weekly` | GET | Peaks hebdomadaires |
+| `/api/monthly` | GET | Peaks mensuels |
+| `/api/cycle-stats` | GET | Stats de cycle + prédiction reset |
+| `/api/sonnet-cycles` | GET | Cycles Sonnet |
+| `/api/resets` | GET | Resets détectés |
+| `/api/plans` | GET | Plans disponibles (détaillés) |
 | `/api/config` | GET/PUT | Configuration |
 | `/api/scrape` | POST | Forcer un scraping |
 | `/api/export/csv` | GET | Télécharger CSV |
@@ -142,6 +148,23 @@ claude-usage-monitor/
     ├── browser_profile/
     └── exports/
 ```
+
+## Configuration
+
+Le fichier `config.json` est créé automatiquement dans le répertoire de données. Options principales :
+
+| Paramètre | Défaut | Description |
+| ----------- | -------- | ------------- |
+| `plan` | `max_100` | Plan actuel (free/pro/max_100/max_200) |
+| `scrape_interval_minutes` | `30` | Intervalle entre scrapes |
+| `auto_scrape` | `true` | Scraping automatique en arrière-plan |
+| `notifications_enabled` | `true` | Notifications desktop |
+| `alert_all_models_threshold` | `80` | Seuil d'alerte All Models (%) |
+| `alert_sonnet_threshold` | `80` | Seuil d'alerte Sonnet (%) |
+| `alert_on_reset` | `true` | Alerter sur reset détecté |
+| `alert_cooldown_minutes` | `60` | Cooldown entre alertes (min) |
+
+Tous les paramètres sont modifiables depuis l'onglet Paramètres du dashboard.
 
 ## Dépannage
 
