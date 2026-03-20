@@ -13,6 +13,9 @@ from typing import Generator
 
 logger = logging.getLogger("monitor.claude_code_reader")
 
+# Constants
+JSONL_PATTERN = "*.jsonl"
+
 # Model pricing (USD per 1M tokens)
 # Updated 2026-03-20 - verify against https://www.anthropic.com/pricing
 MODEL_PRICING = {
@@ -90,7 +93,7 @@ def list_projects(claude_dir: Path) -> list[dict]:
         session_count = 0
         if sessions_dir.exists():
             # Count .jsonl files (exclude sessions-index.json)
-            session_count = len(list(sessions_dir.glob("*.jsonl")))
+            session_count = len(list(sessions_dir.glob(JSONL_PATTERN)))
 
         projects.append(
             {
@@ -286,7 +289,7 @@ def parse_sessions(claude_dir: Path, days: int = 90) -> Generator[dict, None, No
         if not sessions_dir.exists():
             continue
 
-        for session_file in sessions_dir.glob("*.jsonl"):
+        for session_file in sessions_dir.glob(JSONL_PATTERN):
             # Skip non-session files
             if session_file.name.startswith("sessions-index"):
                 continue
@@ -417,3 +420,78 @@ def get_monthly_usage(claude_dir: Path, months: int = 6) -> list[dict]:
         result.append(monthly)
 
     return sorted(result, key=lambda x: x["month"])
+
+
+# ============================================================
+# Phase 5.2: Incremental Parsing with Scan Index
+# ============================================================
+def _should_skip_file(file_path_str: str, file_mtime_int: int, db_module) -> bool:
+    """Check if file should be skipped (unchanged since last scan)."""
+    scan_entry = db_module.get_scan_index(file_path_str)
+    return scan_entry and scan_entry["last_modified"] == file_mtime_int
+
+
+def _is_session_recent(session: dict, cutoff: datetime) -> bool:
+    """Check if session is within the time cutoff."""
+    try:
+        session_time = datetime.fromisoformat(session["start_time"].replace("Z", "+00:00"))
+        return session_time >= cutoff
+    except (KeyError, ValueError):
+        return False
+
+
+def _process_session_file(session_file: Path, db_module, cutoff: datetime) -> dict | None:
+    """Process a single session file, returning parsed session or None."""
+    try:
+        file_mtime_int = int(session_file.stat().st_mtime)
+        file_path_str = str(session_file)
+
+        if _should_skip_file(file_path_str, file_mtime_int, db_module):
+            logger.debug(f"Skipping unchanged file: {session_file.name}")
+            return None
+
+        session = _parse_session_jsonl(session_file)
+        if not session or not _is_session_recent(session, cutoff):
+            return None
+
+        db_module.update_scan_index(file_path_str, file_mtime_int, session_file.stat().st_size)
+        return session
+    except Exception as e:
+        logger.warning(f"Error processing {session_file}: {e}")
+        return None
+
+
+def parse_sessions_incremental(
+    claude_dir: Path, db_module, days: int = 90
+) -> Generator[dict, None, None]:
+    """
+    Generator that yields parsed sessions with incremental scanning.
+
+    Uses scan_index table to avoid re-parsing unchanged files.
+    Only re-parses files that have been modified since last scan.
+
+    Args:
+        claude_dir: Path to ~/.claude/
+        db_module: Database module with scan_index functions
+        days: Only include sessions from the last N days
+
+    Yields:
+        Parsed session dicts
+    """
+    cutoff = datetime.now() - timedelta(days=days)
+    projects_dir = claude_dir / "projects"
+    if not projects_dir.exists():
+        return
+
+    for project_dir in projects_dir.iterdir():
+        if not project_dir.is_dir():
+            continue
+
+        sessions_dir = project_dir / "sessions"
+        if not sessions_dir.exists():
+            continue
+
+        for session_file in sessions_dir.glob(JSONL_PATTERN):
+            session = _process_session_file(session_file, db_module, cutoff)
+            if session:
+                yield session

@@ -641,3 +641,39 @@ def get_claude_code_monthly(months: int = 6) -> list[dict]:
             (since,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ============================================================
+# Phase 5.2: Scan Index Management (Incremental Parsing)
+# ============================================================
+def get_scan_index(session_file_path: str) -> dict | None:
+    """Get scan index entry for a session file."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT session_file_path, last_modified, last_byte_offset, last_scanned_at FROM claude_code_scan_index WHERE session_file_path = ?",
+            (session_file_path,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def update_scan_index(session_file_path: str, last_modified: int, last_byte_offset: int) -> None:
+    """Update scan index after processing a session file."""
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO claude_code_scan_index (session_file_path, last_modified, last_byte_offset, last_scanned_at)
+               VALUES (?, ?, ?, datetime('now'))
+               ON CONFLICT(session_file_path) DO UPDATE SET
+                 last_modified = excluded.last_modified,
+                 last_byte_offset = excluded.last_byte_offset,
+                 last_scanned_at = datetime('now')
+            """,
+            (session_file_path, last_modified, last_byte_offset),
+        )
+        conn.commit()
+
+
+def clear_scan_index() -> None:
+    """Clear all scan index entries (forces full re-scan on next run)."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM claude_code_scan_index")
+        conn.commit()
