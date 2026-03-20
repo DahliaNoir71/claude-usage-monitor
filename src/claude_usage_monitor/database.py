@@ -279,9 +279,9 @@ def get_monthly_peaks(months: int = 6) -> list[dict]:
             """SELECT
                 strftime('%Y-%m', timestamp) as month,
                 MAX(all_models_pct) as max_all_models,
-                AVG(all_models_pct) as avg_all_models,
+                ROUND(AVG(all_models_pct), 1) as avg_all_models,
                 MAX(sonnet_pct) as max_sonnet,
-                AVG(sonnet_pct) as avg_sonnet,
+                ROUND(AVG(sonnet_pct), 1) as avg_sonnet,
                 COUNT(DISTINCT date(timestamp)) as active_days,
                 COUNT(*) as entries_count
             FROM usage_entries
