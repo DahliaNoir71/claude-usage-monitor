@@ -7,7 +7,7 @@ import platform
 from pathlib import Path
 
 APP_NAME = "Claude Usage Monitor"
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.1.0"
 
 # Paths
 _PKG_DIR = Path(__file__).parent
