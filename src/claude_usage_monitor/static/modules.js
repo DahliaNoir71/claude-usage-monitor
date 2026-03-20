@@ -252,6 +252,14 @@ async function loadOverview() {
   renderVelocityChart(analysis);
   renderHourlyChart(analysis);
 
+  // Phase 4.1: Combined timeline (web + Claude Code)
+  try {
+    const timeline = await api('/api/timeline/combined?days=90');
+    renderCombinedTimeline(timeline);
+  } catch (e) {
+    console.warn('Could not load combined timeline:', e);
+  }
+
   // Phase 3.1: Split consumption
   const splitSection = document.createElement('div');
   splitSection.className = 'chart-section';
@@ -375,6 +383,117 @@ function renderHourlyChart(data) {
       }]
     },
     options: baseOpts,
+  });
+}
+
+function renderCombinedTimeline(data) {
+  if (!data || !data.length) return;
+
+  // Create section if it doesn't exist
+  const hourlyChart = document.getElementById('hourlyChart');
+  if (!hourlyChart) return;
+
+  const container = hourlyChart.parentElement.parentElement;
+  let section = container.querySelector('[data-timeline-section]');
+  if (!section) {
+    section = document.createElement('div');
+    section.className = 'chart-section';
+    section.setAttribute('data-timeline-section', '');
+    section.style.marginTop = '24px';
+    container.after(section);
+  }
+
+  kill('combinedTimeline');
+  const labels = data.map(d => d.date.split('-')[2]);
+  const webPct = data.map(d => d.all_models_pct || 0);
+  const ccTokens = data.map(d => d.tokens_claude_code || 0);
+
+  // Normalize tokens to make them visible on same chart (0-100 scale approximate)
+  const maxTokens = Math.max(...ccTokens) || 1;
+  const ccTokensNorm = ccTokens.map(t => (t / maxTokens) * 100);
+
+  section.innerHTML = `
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Timeline combinée</div>
+        <div class="chart-subtitle">Usage web (%) vs Claude Code (tokens normalisés)</div>
+      </div>
+    </div>
+    <div class="chart-box">
+      <div class="chart-wrap" style="height:280px"><canvas id="combinedTimeline"></canvas></div>
+    </div>
+  `;
+
+  APP_STATE.charts['combinedTimeline'] = new Chart(document.getElementById('combinedTimeline'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'All Models %',
+          data: webPct,
+          borderColor: C.accent,
+          backgroundColor: C.accentA,
+          fill: true,
+          tension: 0.3,
+          pointRadius: 2,
+          yAxisID: 'y',
+        },
+        {
+          label: 'Claude Code (tokens normalisés)',
+          data: ccTokensNorm,
+          borderColor: C.blue,
+          backgroundColor: C.blueA,
+          fill: true,
+          tension: 0.3,
+          pointRadius: 2,
+          yAxisID: 'y1',
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, labels: { color: C.tick, boxWidth: 10 } },
+        tooltip: {
+          callbacks: {
+            afterLabel: (ctx) => {
+              if (ctx.datasetIndex === 1) {
+                const maxTokens = Math.max(...ccTokens);
+                const actualTokens = (ctx.parsed.y / 100) * maxTokens;
+                return `(~${formatNumber(actualTokens)} tokens)`;
+              }
+              return '';
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          title: { display: true, text: 'Usage Web (%)', color: C.tick },
+          ticks: { color: C.tick, callback: v => v + '%' },
+          grid: { color: C.grid },
+          max: 100,
+        },
+        y1: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          title: { display: true, text: 'Claude Code (tokens relatifs)', color: C.tick },
+          ticks: { color: C.tick },
+          grid: { drawOnChartArea: false },
+        },
+        x: {
+          ticks: { color: C.tick, maxRotation: 45, autoSkip: true, maxTicksLimit: 30 },
+          grid: { display: false },
+        },
+      },
+    },
   });
 }
 
