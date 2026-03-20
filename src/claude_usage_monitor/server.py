@@ -25,6 +25,10 @@ class ConfigUpdate(BaseModel):
     auto_scrape: bool | None = None
     auto_export_csv: bool | None = None
     notifications_enabled: bool | None = None
+    alert_all_models_threshold: int | None = None
+    alert_sonnet_threshold: int | None = None
+    alert_on_reset: bool | None = None
+    alert_cooldown_minutes: int | None = None
     chrome_user_data_dir: str | None = None
     chrome_profile: str | None = None
     launch_at_startup: bool | None = None

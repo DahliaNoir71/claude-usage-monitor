@@ -99,8 +99,78 @@ class ScrapeScheduler:
                 source="auto_scrape",
             )
             logger.info(f"Scrape OK: All Models={result['allModels']}%")
+            _check_alerts(result)
         else:
             logger.warning("Scrape returned no data")
+
+
+# ── Notifications ──────────────────────────────────────────────────────────
+
+_last_alert_times: dict[str, float] = {}
+
+
+def _send_notification(title: str, message: str):
+    """Send a desktop notification (Windows toast)."""
+    try:
+        from plyer import notification
+        notification.notify(
+            title=title,
+            message=message,
+            app_name=APP_NAME,
+            timeout=10,
+        )
+        logger.info(f"Notification sent: {title}")
+    except ImportError:
+        logger.debug("plyer not installed — notifications disabled")
+    except Exception as e:
+        logger.warning(f"Notification failed: {e}")
+
+
+def _check_alerts(result: dict):
+    """Check thresholds after a scrape and send notifications if needed."""
+    import time
+
+    config = load_config()
+    if not config.get("notifications_enabled", True):
+        return
+
+    cooldown = config.get("alert_cooldown_minutes", 60) * 60
+    now = time.time()
+
+    all_models = result.get("allModels", 0) or 0
+    sonnet = result.get("sonnet", 0) or 0
+
+    threshold_am = config.get("alert_all_models_threshold", 80)
+    threshold_sn = config.get("alert_sonnet_threshold", 80)
+
+    if all_models >= threshold_am:
+        if now - _last_alert_times.get("all_models", 0) > cooldown:
+            _send_notification(
+                "Usage All Models élevé",
+                f"All Models à {all_models}% (seuil : {threshold_am}%)",
+            )
+            _last_alert_times["all_models"] = now
+
+    if sonnet >= threshold_sn:
+        if now - _last_alert_times.get("sonnet", 0) > cooldown:
+            _send_notification(
+                "Usage Sonnet élevé",
+                f"Sonnet à {sonnet}% (seuil : {threshold_sn}%)",
+            )
+            _last_alert_times["sonnet"] = now
+
+    # Alert on reset detected
+    if config.get("alert_on_reset", True):
+        prev = db.get_latest_entry()
+        if prev:
+            prev_am = prev.get("all_models_pct", 0) or 0
+            if all_models < prev_am - 5:
+                if now - _last_alert_times.get("reset", 0) > cooldown:
+                    _send_notification(
+                        "Reset détecté",
+                        f"All Models : {prev_am}% → {all_models}%",
+                    )
+                    _last_alert_times["reset"] = now
 
 
 # ── System Tray ─────────────────────────────────────────────────────────────
