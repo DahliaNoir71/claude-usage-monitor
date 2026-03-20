@@ -103,6 +103,41 @@ class ScrapeScheduler:
         else:
             logger.warning("Scrape returned no data")
 
+        # Also scan Claude Code sessions after web scrape
+        config = load_config()
+        if config.get("claude_code_scan_enabled", True):
+            _scan_claude_code()
+
+
+def _scan_claude_code():
+    """Parse new Claude Code sessions and update database."""
+    from .claude_code_reader import find_claude_code_dir, parse_sessions
+
+    config = load_config()
+    claude_dir_override = config.get("claude_code_dir")
+
+    if claude_dir_override:
+        claude_dir = Path(claude_dir_override)
+        if not claude_dir.exists():
+            logger.warning(f"Claude Code directory not found: {claude_dir}")
+            return
+    else:
+        claude_dir = find_claude_code_dir()
+        if not claude_dir:
+            logger.debug("Claude Code directory not found, skipping scan")
+            return
+
+    try:
+        session_count = 0
+        for session in parse_sessions(claude_dir, days=90):
+            db.upsert_claude_code_session(session)
+            session_count += 1
+
+        if session_count > 0:
+            logger.info(f"Claude Code scan: {session_count} sessions processed")
+    except Exception as e:
+        logger.error(f"Claude Code scan failed: {e}")
+
 
 # ── Notifications ──────────────────────────────────────────────────────────
 
@@ -211,6 +246,17 @@ def _create_tray_icon(scheduler: ScrapeScheduler):
                 _send_notification("Scrape échoué", str(e))
         threading.Thread(target=_run, daemon=True).start()
 
+    def scan_claude_code_now(*_):
+        def _run():
+            try:
+                logger.info("Manual Claude Code scan triggered from tray menu")
+                _scan_claude_code()
+                _send_notification("Scan Claude Code terminé", "Sessions analysées.")
+            except Exception as e:
+                logger.error(f"Tray Claude Code scan failed: {e}")
+                _send_notification("Scan échoué", str(e))
+        threading.Thread(target=_run, daemon=True).start()
+
     def export_csv(*_):
         fp = db.export_csv()
         if fp:
@@ -227,6 +273,7 @@ def _create_tray_icon(scheduler: ScrapeScheduler):
         pystray.MenuItem("Ouvrir le dashboard", open_dashboard, default=True),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Scraper maintenant", scrape_now),
+        pystray.MenuItem("Scanner Claude Code", scan_claude_code_now),
         pystray.MenuItem("Exporter CSV", export_csv),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Quitter", quit_app),
