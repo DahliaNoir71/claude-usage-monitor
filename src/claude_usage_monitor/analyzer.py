@@ -41,6 +41,9 @@ def analyze(entries: list[dict], plan: str = "max_100", monthly_stats: list[dict
         days_covered=days_covered,
     )
 
+    # Include Claude Code data if available
+    claude_code_data = _get_claude_code_analysis()
+
     return {
         "status": "ok",
         "current_plan": plan,
@@ -70,6 +73,7 @@ def analyze(entries: list[dict], plan: str = "max_100", monthly_stats: list[dict
         "hourly_distribution": hourly_dist,
         "daily_velocity": daily_velocity,
         "recommendation": recommendation,
+        "claude_code": claude_code_data,
     }
 
 
@@ -415,3 +419,113 @@ def _recommend_plan(
             "days_covered": days_covered,
         },
     }
+
+
+def _get_claude_code_analysis() -> dict:
+    """Analyze Claude Code sessions for the current month."""
+    try:
+        from . import database as db
+        from datetime import datetime
+
+        # Get current month
+        now = datetime.now()
+        current_month = now.strftime("%Y-%m")
+
+        # Get all sessions this month
+        sessions = db.get_claude_code_sessions(days=31)
+        sessions_this_month = [s for s in sessions if s.get("start_time", "").startswith(current_month)]
+
+        if not sessions_this_month:
+            return {"detected": False}
+
+        # Aggregate metrics
+        total_tokens = sum(s.get("total_tokens", 0) for s in sessions_this_month)
+        total_cost = sum(s.get("cost_usd", 0) for s in sessions_this_month)
+        session_count = len(sessions_this_month)
+
+        # Extract and aggregate model usage
+        model_usage = _aggregate_model_usage(sessions_this_month)
+        model_split = _compute_model_split(model_usage, total_tokens)
+        primary_model = max(model_usage.items(), key=lambda x: x[1])[0] if model_usage else "unknown"
+
+        # Aggregate projects
+        projects = _aggregate_projects(sessions_this_month)
+        top_projects = sorted(
+            [{"name": name, "tokens": data["tokens"], "cost": round(data["cost"], 2)} for name, data in projects.items()],
+            key=lambda x: x["cost"],
+            reverse=True,
+        )[:5]
+
+        # Daily averages
+        active_days = len({s.get("start_time", "")[:10] for s in sessions_this_month})
+        daily_avg_tokens = round(total_tokens / active_days, 0) if active_days > 0 else 0
+        daily_avg_cost = round(total_cost / active_days, 2) if active_days > 0 else 0
+
+        return {
+            "detected": True,
+            "sessions_this_month": session_count,
+            "tokens_this_month": total_tokens,
+            "cost_equivalent_this_month": round(total_cost, 2),
+            "primary_model": primary_model,
+            "model_split": model_split,
+            "top_projects": top_projects,
+            "daily_avg_tokens": daily_avg_tokens,
+            "daily_avg_cost": daily_avg_cost,
+            "active_days": active_days,
+        }
+
+    except Exception as e:
+        # Log but don't crash if Claude Code analysis fails
+        import logging
+        logger = logging.getLogger("monitor.analyzer")
+        logger.debug(f"Claude Code analysis failed: {e}")
+        return {"detected": False, "error": str(e)}
+
+
+def _aggregate_model_usage(sessions: list[dict]) -> dict:
+    """Aggregate token usage by model across sessions."""
+    model_usage = {}
+    for session in sessions:
+        for model_id, usage in session.get("model_usage", {}).items():
+            if model_id not in model_usage:
+                model_usage[model_id] = 0
+            model_usage[model_id] += (
+                usage.get("input_tokens", 0)
+                + usage.get("output_tokens", 0)
+                + usage.get("cache_read", 0)
+                + usage.get("cache_creation", 0)
+            )
+    return model_usage
+
+
+def _compute_model_split(model_usage: dict, total_tokens: int) -> dict:
+    """Compute normalized model split percentages."""
+    model_split = {}
+    for model_id, tokens in model_usage.items():
+        pct = round(100 * tokens / total_tokens, 1) if total_tokens > 0 else 0
+        key = _normalize_model_name(model_id)
+        model_split[key] = model_split.get(key, 0) + pct
+    return model_split
+
+
+def _normalize_model_name(model_id: str) -> str:
+    """Normalize model ID to display name."""
+    if "opus" in model_id:
+        return "opus"
+    if "sonnet" in model_id:
+        return "sonnet"
+    if "haiku" in model_id:
+        return "haiku"
+    return model_id
+
+
+def _aggregate_projects(sessions: list[dict]) -> dict:
+    """Aggregate token and cost usage by project."""
+    projects = {}
+    for session in sessions:
+        project = session.get("project_path") or "Unknown"
+        if project not in projects:
+            projects[project] = {"tokens": 0, "cost": 0}
+        projects[project]["tokens"] += session.get("total_tokens", 0)
+        projects[project]["cost"] += session.get("cost_usd", 0)
+    return projects

@@ -32,6 +32,9 @@ class ConfigUpdate(BaseModel):
     chrome_user_data_dir: str | None = None
     chrome_profile: str | None = None
     launch_at_startup: bool | None = None
+    claude_code_scan_enabled: bool | None = None
+    claude_code_dir: str | None = None
+    claude_code_scan_interval_minutes: int | None = None
 
 
 class ManualEntry(BaseModel):
@@ -194,3 +197,148 @@ async def import_csv(file: UploadFile = File(...)):
 async def clear_data():
     db.clear_all()
     return {"success": True}
+
+
+# ── Claude Code API ──────────────────────────────────────────────────────────
+
+@app.get("/api/claude-code/status")
+async def claude_code_status():
+    """Check if Claude Code is detected and return basic stats."""
+    from .claude_code_reader import find_claude_code_dir, list_projects
+
+    config = load_config()
+    claude_dir_override = config.get("claude_code_dir")
+
+    if claude_dir_override:
+        claude_dir = Path(claude_dir_override)
+        if not claude_dir.exists():
+            return {"detected": False, "dir": None, "sessions_count": 0, "error": f"Directory not found: {claude_dir}"}
+    else:
+        claude_dir = find_claude_code_dir()
+        if not claude_dir:
+            return {"detected": False, "dir": None, "sessions_count": 0}
+
+    try:
+        projects = list_projects(claude_dir)
+        session_count = sum(p["session_count"] for p in projects)
+        latest_sessions = db.get_claude_code_sessions(days=1)
+        return {
+            "detected": True,
+            "dir": str(claude_dir),
+            "projects_count": len(projects),
+            "sessions_count": session_count,
+            "last_session": latest_sessions[0] if latest_sessions else None,
+        }
+    except Exception as e:
+        logger.error(f"Error checking Claude Code status: {e}")
+        return {"detected": False, "error": str(e)}
+
+
+@app.get("/api/claude-code/sessions")
+async def get_claude_code_sessions(days: int = 30, project: str | None = None):
+    """Get Claude Code sessions with optional project filter."""
+    sessions = db.get_claude_code_sessions(days=days, project=project)
+    return sessions
+
+
+@app.get("/api/claude-code/daily")
+async def get_claude_code_daily(days: int = 90):
+    """Get daily Claude Code aggregates."""
+    return db.get_claude_code_daily(days=days)
+
+
+@app.get("/api/claude-code/monthly")
+async def get_claude_code_monthly(months: int = 6):
+    """Get monthly Claude Code aggregates."""
+    return db.get_claude_code_monthly(months=months)
+
+
+@app.get("/api/claude-code/projects")
+async def get_claude_code_projects():
+    """Get projects with their aggregated consumption."""
+    sessions = db.get_claude_code_sessions(days=90)
+
+    projects = {}
+    for session in sessions:
+        project = session.get("project_path") or "Unknown"
+        if project not in projects:
+            projects[project] = {
+                "name": project,
+                "sessions": 0,
+                "total_tokens": 0,
+                "cost_usd": 0.0,
+                "last_accessed": None,
+            }
+
+        projects[project]["sessions"] += 1
+        projects[project]["total_tokens"] += session.get("total_tokens", 0)
+        projects[project]["cost_usd"] += session.get("cost_usd", 0.0)
+
+        last = session.get("end_time") or session.get("start_time")
+        if last and (projects[project]["last_accessed"] is None or last > projects[project]["last_accessed"]):
+            projects[project]["last_accessed"] = last
+
+    return sorted(projects.values(), key=lambda p: p["cost_usd"], reverse=True)
+
+
+@app.get("/api/claude-code/models")
+async def get_claude_code_models(days: int = 30):
+    """Get token breakdown by model."""
+    sessions = db.get_claude_code_sessions(days=days)
+
+    models = {}
+    for session in sessions:
+        model_usage = session.get("model_usage", {})
+        for model_id, usage in model_usage.items():
+            if model_id not in models:
+                models[model_id] = {
+                    "model": model_id,
+                    "tokens": 0,
+                    "messages": 0,
+                    "cost_usd": 0.0,
+                }
+
+            tokens = (
+                usage.get("input_tokens", 0)
+                + usage.get("output_tokens", 0)
+                + usage.get("cache_read", 0)
+                + usage.get("cache_creation", 0)
+            )
+            models[model_id]["tokens"] += tokens
+            models[model_id]["messages"] += usage.get("message_count", 0)
+
+    # Calculate cost for each model (estimate based on pricing)
+    from .config import MODEL_PRICING
+
+    for model in models.values():
+        model_id = model["model"]
+        pricing = None
+        for key, price_dict in MODEL_PRICING.items():
+            if model_id.startswith(key):
+                pricing = price_dict
+                break
+
+        if pricing:
+            # Rough estimate: assume 30% input, 70% output (typical ratio)
+            input_estimate = int(model["tokens"] * 0.3)
+            output_estimate = model["tokens"] - input_estimate
+            cost = (
+                input_estimate * pricing["input"]
+                + output_estimate * pricing["output"]
+            ) / 1_000_000
+            model["cost_usd"] = round(cost, 2)
+
+    return sorted(models.values(), key=lambda m: m["cost_usd"], reverse=True)
+
+
+@app.post("/api/claude-code/scan")
+async def trigger_claude_code_scan():
+    """Trigger a manual Claude Code scan."""
+    from .main import _scan_claude_code
+
+    try:
+        _scan_claude_code()
+        return {"success": True, "message": "Claude Code scan triggered"}
+    except Exception as e:
+        logger.error(f"Claude Code scan failed: {e}")
+        raise HTTPException(500, f"Scan failed: {e}")
