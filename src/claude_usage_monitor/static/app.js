@@ -55,7 +55,7 @@ const APP = {
 
   async loadModule(tabName) {
     try {
-      const response = await fetch(`modules/${tabName}.html`);
+      const response = await fetch(`/static/modules/${tabName}.html`);
       if (!response.ok) throw new Error(`Failed to load ${tabName}`);
       this.loadedModules[tabName] = await response.text();
     } catch (error) {

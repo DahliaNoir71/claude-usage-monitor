@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import database as db
@@ -15,6 +16,10 @@ from .config import APP_NAME, APP_VERSION, DATA_DIR, PLANS, STATIC_DIR, load_con
 logger = logging.getLogger("monitor.server")
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION)
+
+# Mount static files (CSS, JS, module HTML)
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 # ── API Models ──────────────────────────────────────────────────────────────
