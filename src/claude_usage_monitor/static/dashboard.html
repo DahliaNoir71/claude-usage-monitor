@@ -1163,6 +1163,8 @@ async function triggerScrape(btn) {
     if (r.success) {
       loadedTabs['history'] = false;
       loadedTabs['overview'] = false;
+      loadedTabs['cycles'] = false;
+      await loadTab('history');
     }
   } catch (e) {
     btn.textContent = 'Erreur';
