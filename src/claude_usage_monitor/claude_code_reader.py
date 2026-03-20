@@ -18,26 +18,7 @@ JSONL_PATTERN = "*.jsonl"
 
 # Model pricing (USD per 1M tokens)
 # Updated 2026-03-20 - verify against https://www.anthropic.com/pricing
-MODEL_PRICING = {
-    "claude-opus-4": {
-        "input": 5.0,
-        "output": 25.0,
-        "cache_read": 0.50,
-        "cache_creation": 6.25,
-    },
-    "claude-sonnet-4": {
-        "input": 3.0,
-        "output": 15.0,
-        "cache_read": 0.30,
-        "cache_creation": 3.75,
-    },
-    "claude-haiku-4.5": {
-        "input": 0.80,
-        "output": 4.0,
-        "cache_read": 0.08,
-        "cache_creation": 1.0,
-    },
-}
+from .config import MODEL_PRICING
 
 
 def find_claude_code_dir() -> Path | None:
@@ -56,20 +37,26 @@ def find_claude_code_dir() -> Path | None:
 
 def _decode_project_path(encoded: str) -> str:
     """
-    Decode a Claude Code project path from its encoded directory name.
+    Extract a short display name from a Claude Code encoded directory name.
 
-    Example: "-Users-spfeiffer-VS_Code_Projects-my-app" -> "C:\\Users\\spfeiffer\\VS Code Projects\\my-app"
+    Encoding: absolute path with : \\ / and spaces all replaced by '-'.
+    Example: "c--Users-SPFEIFFER-VS-Code-Projects-my-app" -> "my-app"
+
+    Since '-' is used for both path separators and literal hyphens,
+    we extract the last segment after known parent directory patterns.
     """
-    # Claude Code encodes paths as: /Volumes/path/to/project -> -Volumes-path-to-project
-    # Replace leading dash with the first path component, replace remaining dashes with slashes/backslashes
-    parts = encoded.split("-")
-    if not parts:
-        return encoded
+    # Remove drive prefix (e.g. "c--Users-USERNAME-")
+    # Pattern: starts with single letter, then "--Users-<username>-"
+    import re
+    stripped = re.sub(r'^[a-zA-Z]--Users-[^-]+-', '', encoded)
+    if stripped == encoded:
+        # No match — try Unix-style: "-Users-<username>-" or "-home-<username>-"
+        stripped = re.sub(r'^-?(?:Users|home)-[^-]+-', '', encoded)
 
-    # First component often represents drive/volume; reconstruct intelligently
-    # For now, return a readable version by replacing dashes with forward slashes
-    decoded = "/".join(parts)
-    return decoded
+    # Remove known parent directory patterns (PycharmProjects, VS-Code-Projects, etc.)
+    stripped = re.sub(r'^(?:PycharmProjects|VS-Code-Projects|Documents|Desktop|Projects|repos|src)-', '', stripped)
+
+    return stripped or encoded
 
 
 def list_projects(claude_dir: Path) -> list[dict]:
@@ -178,20 +165,34 @@ def _parse_session_jsonl(session_path: Path) -> dict | None:
                     continue
 
                 # Extract message metadata
-                if msg.get("type") == "message" and msg.get("role") == "assistant":
-                    messages.append(msg)
+                # Format: root has type="assistant", nested "message" has role/model/usage
+                is_assistant = (
+                    (msg.get("type") == "assistant") or
+                    (msg.get("type") == "message" and msg.get("role") == "assistant")
+                )
+                if is_assistant:
+                    # Support nested format (message.role/model/usage) and flat format
+                    inner = msg.get("message", msg)
+                    if inner.get("role") != "assistant" and msg.get("type") == "assistant":
+                        inner = msg.get("message", {})
 
-                    # Track timestamps
-                    if "timestamp" in msg:
-                        ts = datetime.fromisoformat(msg["timestamp"].replace("Z", "+00:00"))
-                        if start_time is None or ts < start_time:
-                            start_time = ts
-                        if end_time is None or ts > end_time:
-                            end_time = ts
+                    messages.append(inner)
+
+                    # Track timestamps (timestamp is at root level)
+                    ts_str = msg.get("timestamp") or inner.get("timestamp")
+                    if ts_str:
+                        try:
+                            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                            if start_time is None or ts < start_time:
+                                start_time = ts
+                            if end_time is None or ts > end_time:
+                                end_time = ts
+                        except (ValueError, AttributeError):
+                            pass
 
                     # Track model usage
-                    model = msg.get("model", "unknown")
-                    usage = msg.get("usage", {})
+                    model = inner.get("model", "unknown")
+                    usage = inner.get("usage", {})
                     if model not in model_usage:
                         model_usage[model] = {
                             "input_tokens": 0,
@@ -222,11 +223,11 @@ def _parse_session_jsonl(session_path: Path) -> dict | None:
         return None
 
     # Calculate totals
-    total_input = sum(m["usage"].get("input_tokens", 0) for m in messages)
-    total_output = sum(m["usage"].get("output_tokens", 0) for m in messages)
-    total_cache_read = sum(m["usage"].get("cache_read_input_tokens", 0) for m in messages)
+    total_input = sum(m.get("usage", {}).get("input_tokens", 0) for m in messages)
+    total_output = sum(m.get("usage", {}).get("output_tokens", 0) for m in messages)
+    total_cache_read = sum(m.get("usage", {}).get("cache_read_input_tokens", 0) for m in messages)
     total_cache_creation = sum(
-        m["usage"].get("cache_creation_input_tokens", 0) for m in messages
+        m.get("usage", {}).get("cache_creation_input_tokens", 0) for m in messages
     )
     total_tokens = total_input + total_output + total_cache_read + total_cache_creation
 
@@ -301,19 +302,19 @@ def parse_sessions(claude_dir: Path, days: int = 90) -> Generator[dict, None, No
 
         for session_location in session_locations:
             for session_file in session_location.glob(JSONL_PATTERN):
-            # Skip non-session files
-            if session_file.name.startswith("sessions-index"):
-                continue
+                # Skip non-session files
+                if session_file.name.startswith("sessions-index"):
+                    continue
 
-            # Check file modification time
-            mtime = datetime.fromtimestamp(session_file.stat().st_mtime)
-            if mtime < cutoff:
-                continue
+                # Check file modification time
+                mtime = datetime.fromtimestamp(session_file.stat().st_mtime)
+                if mtime < cutoff:
+                    continue
 
-            parsed = _parse_session_jsonl(session_file)
-            if parsed:
-                parsed["project_path"] = project_name
-                yield parsed
+                parsed = _parse_session_jsonl(session_file)
+                if parsed:
+                    parsed["project_path"] = project_name
+                    yield parsed
 
 
 def get_daily_usage(claude_dir: Path, days: int = 90) -> list[dict]:
@@ -507,6 +508,6 @@ def parse_sessions_incremental(
 
         for session_location in session_locations:
             for session_file in session_location.glob(JSONL_PATTERN):
-            session = _process_session_file(session_file, db_module, cutoff)
-            if session:
-                yield session
+                session = _process_session_file(session_file, db_module, cutoff)
+                if session:
+                    yield session

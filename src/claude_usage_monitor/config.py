@@ -76,6 +76,12 @@ MODEL_PRICING = {
         "cache_read": 0.08,
         "cache_creation": 1.0,
     },
+    "claude-haiku-4-5": {
+        "input": 0.80,
+        "output": 4.0,
+        "cache_read": 0.08,
+        "cache_creation": 1.0,
+    },
 }
 
 # Plans

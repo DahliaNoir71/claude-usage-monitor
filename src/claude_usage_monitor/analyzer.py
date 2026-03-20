@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from .config import PLANS
 
 
-def analyze(entries: list[dict], plan: str = "max_100", monthly_stats: list[dict] | None = None) -> dict:
+def analyze(entries: list[dict], plan: str = "max_100", monthly_stats: list[dict] | None = None, claude_code_monthly_cost: float = 0.0) -> dict:
     if not entries:
         return {"status": "no_data", "message": "Aucune donnée disponible. Lance un scraping."}
 
@@ -39,6 +39,7 @@ def analyze(entries: list[dict], plan: str = "max_100", monthly_stats: list[dict
         sonnet_cycles=sonnet_cycles,
         current_plan=plan,
         days_covered=days_covered,
+        claude_code_cost_monthly=claude_code_monthly_cost,
     )
 
     # Include Claude Code data if available
@@ -295,6 +296,7 @@ def _recommend_plan(
     sonnet_cycles: list[dict],
     current_plan: str,
     days_covered: int,
+    claude_code_cost_monthly: float = 0.0,
 ) -> dict:
     if not monthly_stats:
         return {
@@ -317,8 +319,8 @@ def _recommend_plan(
     rate_limit_days = [m.get("rate_limit_days", 0) for m in monthly_stats]
     months_analyzed = len(monthly_stats)
 
-    monthly_avg_peak = sum(monthly_peaks) / months_analyzed
-    monthly_max_peak = max(monthly_peaks)
+    max_peak = max(monthly_peaks)
+    avg_peak = sum(monthly_peaks) / months_analyzed
     trend = _compute_monthly_trend(monthly_stats)
 
     # Confidence based on complete months (exclude current partial month)
@@ -327,70 +329,118 @@ def _recommend_plan(
 
     current_price = PLANS.get(current_plan, PLANS["max_100"])["price"]
 
+    # Projection de l'usage sur les autres plans
+    # Max $100 = 5x Pro, Max $200 = 20x Pro
+    plan_multipliers = {
+        "free": None,
+        "pro": 1,
+        "max_100": 5,
+        "max_200": 20,
+    }
+    current_mult = plan_multipliers.get(current_plan, 1)
+
+    projected_usage = {}
+    for plan_key, mult in plan_multipliers.items():
+        if mult is None:
+            projected_usage[plan_key] = None
+            continue
+        projected = round(max_peak * current_mult / mult) if mult > 0 else None
+        projected_usage[plan_key] = projected
+
+    # Decision logic basée sur la projection
     recommended = current_plan
     savings = 0
     action = "maintain"
     reason = ""
 
-    months_label = f"les {months_analyzed} derniers mois" if months_analyzed > 1 else "le dernier mois"
+    pro_projected = max_peak * current_mult / 1 if current_mult else max_peak
+    max100_projected = max_peak * current_mult / 5 if current_mult else max_peak
 
     if current_plan in ("max_100", "max_200"):
-        if monthly_max_peak <= 30 and complete_months >= 2:
+        if pro_projected <= 70:
             recommended = "pro"
             savings = current_price - PLANS["pro"]["price"]
             action = "downgrade"
             reason = (
-                f"Sur {months_label}, ton pic max All Models est de {monthly_max_peak}% "
-                f"(moyenne {monthly_avg_peak:.0f}%). Le Pro couvrirait largement cet usage."
+                f"Ton pic d'utilisation est de {max_peak}% de ton plan actuel, "
+                f"ce qui équivaudrait à ~{int(pro_projected)}% sur un plan Pro. "
+                f"Le Pro couvrirait ton usage. "
+                f"Économie : ${savings}/mois (${savings * 12}/an)."
             )
-        elif monthly_max_peak <= 50:
+        elif pro_projected <= 100:
             recommended = "pro"
             savings = current_price - PLANS["pro"]["price"]
             action = "consider_downgrade"
             reason = (
-                f"Usage modéré sur {months_label} ({monthly_max_peak}% max). "
-                f"Le Pro pourrait suffire mais surveille les rate-limits."
+                f"Ton usage ({max_peak}% de ton plan) équivaudrait à ~{int(pro_projected)}% sur un Pro. "
+                f"C'est serré mais possible. Tu risques des rate-limits occasionnels."
             )
-        elif monthly_max_peak <= 75:
-            reason = f"Usage correct sur {months_label} ({monthly_max_peak}% max). Ton plan est adapté."
-        else:
-            if current_plan == "max_200" and monthly_max_peak <= 90:
-                recommended = "max_100"
-                savings = PLANS["max_200"]["price"] - PLANS["max_100"]["price"]
-                action = "consider_downgrade"
-                reason = f"Usage élevé mais le Max $100 pourrait suffire."
-            else:
-                reason = f"Usage élevé sur {months_label} ({monthly_max_peak}% max). Bon usage de ton plan Max."
-
-    elif current_plan == "pro":
-        frequent_rate_limits = sum(1 for rl in rate_limit_days if rl >= 2)
-        if frequent_rate_limits >= 2:
+        elif current_plan == "max_200" and max100_projected <= 80:
             recommended = "max_100"
-            savings = -(PLANS["max_100"]["price"] - PLANS["pro"]["price"])
-            action = "upgrade"
-            confidence = "high"
+            savings = PLANS["max_200"]["price"] - PLANS["max_100"]["price"]
+            action = "consider_downgrade"
             reason = (
-                f"Usage très élevé sur {months_label} ({monthly_max_peak}% max). "
-                f"Rate-limité {sum(rate_limit_days)} jours au total. Le Max $100 éviterait les rate-limits."
+                f"Ton usage ({max_peak}%) équivaudrait à ~{int(max100_projected)}% sur un Max $100. "
+                f"Le Max $100 pourrait suffire."
             )
-        elif monthly_max_peak >= 80:
+        else:
+            reason = (
+                f"Ton pic d'utilisation est de {max_peak}% de ton plan. "
+                f"Sur un Pro, tu serais à ~{int(pro_projected)}% "
+                f"{'→ rate-limité en permanence. ' if pro_projected > 100 else '→ régulièrement rate-limité. '}"
+                f"Ton plan {PLANS.get(current_plan, {}).get('name', current_plan)} est adapté."
+            )
+    elif current_plan == "pro":
+        if max_peak >= 80:
             recommended = "max_100"
             savings = -(PLANS["max_100"]["price"] - PLANS["pro"]["price"])
             action = "upgrade"
-            reason = f"Pic mensuel à {monthly_max_peak}%. Le Max $100 offrirait plus de marge."
+            reason = (
+                f"Ton usage atteint {max_peak}% de ton plan Pro. "
+                f"Tu es probablement souvent rate-limité. "
+                f"Le Max $100 te donnerait 5x la capacité."
+            )
+        elif max_peak >= 50:
+            reason = f"Ton usage est de {max_peak}% de ton plan. Correct mais surveille les rate-limits."
         else:
-            reason = f"Usage {'correct' if monthly_max_peak >= 50 else 'modéré'} sur {months_label} ({monthly_max_peak}% max). Plan adapté."
+            reason = f"Ton usage est modéré ({max_peak}%). Ton plan Pro est adapté."
     else:  # free
-        frequent_rate_limits = sum(1 for rl in rate_limit_days if rl >= 5)
-        if frequent_rate_limits >= 1 or monthly_max_peak >= 60:
+        if max_peak >= 60:
             recommended = "pro"
             savings = -PLANS["pro"]["price"]
             action = "upgrade"
-            reason = "Usage élevé pour un plan gratuit. Le Pro améliorerait l'expérience."
+            reason = f"Usage élevé ({max_peak}%) pour un plan gratuit. Le Pro améliorerait l'expérience."
         else:
             reason = "Usage compatible avec le plan gratuit."
 
+    # ── Claude Code veto ──
+    if claude_code_cost_monthly > 0 and action in ("downgrade", "consider_downgrade"):
+        recommended_price = PLANS.get(recommended, {}).get("price", 0)
+        if claude_code_cost_monthly > recommended_price:
+            recommended = current_plan
+            savings = 0
+            action = "maintain"
+            reason = (
+                f"Bien que ton usage web soit modéré ({max_peak}% pic), "
+                f"ta consommation Claude Code représente ${claude_code_cost_monthly:.0f}/mois en équivalent API. "
+                f"Ton plan {PLANS.get(current_plan, {}).get('name', current_plan)} "
+                f"à ${current_price}/mois est très rentable "
+                f"({claude_code_cost_monthly / current_price:.0f}x la valeur)."
+            )
+
     caveats = []
+    if claude_code_cost_monthly > 0:
+        ratio = claude_code_cost_monthly / current_price if current_price > 0 else 0
+        if ratio >= 2:
+            caveats.append(
+                f"Claude Code représente ${claude_code_cost_monthly:.0f}/mois en équivalent API "
+                f"({ratio:.0f}x le prix de ton plan). Ton abonnement est très rentable."
+            )
+        elif ratio >= 0.5:
+            caveats.append(
+                f"Claude Code représente ${claude_code_cost_monthly:.0f}/mois en équivalent API. "
+                f"Ton plan couvre bien cet usage."
+            )
     if confidence == "low":
         caveats.append(f"Données sur {days_covered} jours seulement — confirme sur 1 mois complet minimum.")
     if current_plan in ("max_100", "max_200") and recommended == "pro":
@@ -413,10 +463,14 @@ def _recommend_plan(
         "stats": {
             "months_analyzed": months_analyzed,
             "monthly_peaks": monthly_peaks,
-            "monthly_avgs": monthly_avgs,
+            "monthly_avgs": [round(a, 1) for a in monthly_avgs],
             "rate_limit_days_per_month": rate_limit_days,
             "trend": trend,
             "days_covered": days_covered,
+            "avg_weekly_peak": round(avg_peak, 1),
+            "max_weekly_peak": max_peak,
+            "projected_usage": projected_usage,
+            "current_multiplier": current_mult,
         },
     }
 
@@ -425,7 +479,12 @@ def _get_claude_code_analysis() -> dict:
     """Analyze Claude Code sessions for the current month."""
     try:
         from . import database as db
+        from .claude_code_reader import find_claude_code_dir
         from datetime import datetime
+
+        # Check if Claude Code directory exists (independent of DB content)
+        claude_dir = find_claude_code_dir()
+        detected = claude_dir is not None
 
         # Get current month
         now = datetime.now()
@@ -436,7 +495,17 @@ def _get_claude_code_analysis() -> dict:
         sessions_this_month = [s for s in sessions if s.get("start_time", "").startswith(current_month)]
 
         if not sessions_this_month:
-            return {"detected": False}
+            return {
+                "detected": detected,
+                "sessions_this_month": 0,
+                "tokens_this_month": 0,
+                "cost_equivalent_this_month": 0.0,
+                "primary_model": "unknown",
+                "model_split": {},
+                "top_projects": [],
+                "daily_avg_tokens": 0,
+                "daily_avg_cost": 0.0,
+            }
 
         # Aggregate metrics
         total_tokens = sum(s.get("total_tokens", 0) for s in sessions_this_month)
@@ -486,15 +555,24 @@ def _aggregate_model_usage(sessions: list[dict]) -> dict:
     """Aggregate token usage by model across sessions."""
     model_usage = {}
     for session in sessions:
-        for model_id, usage in session.get("model_usage", {}).items():
+        # Try detailed model_usage dict first (from raw parsing)
+        mu = session.get("model_usage")
+        if mu:
+            for model_id, usage in mu.items():
+                if model_id not in model_usage:
+                    model_usage[model_id] = 0
+                model_usage[model_id] += (
+                    usage.get("input_tokens", 0)
+                    + usage.get("output_tokens", 0)
+                    + usage.get("cache_read", 0)
+                    + usage.get("cache_creation", 0)
+                )
+        else:
+            # Fallback: use primary_model + total_tokens from DB
+            model_id = session.get("primary_model", "unknown")
             if model_id not in model_usage:
                 model_usage[model_id] = 0
-            model_usage[model_id] += (
-                usage.get("input_tokens", 0)
-                + usage.get("output_tokens", 0)
-                + usage.get("cache_read", 0)
-                + usage.get("cache_creation", 0)
-            )
+            model_usage[model_id] += session.get("total_tokens", 0)
     return model_usage
 
 

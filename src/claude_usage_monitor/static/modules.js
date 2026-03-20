@@ -265,27 +265,47 @@ async function loadOverview() {
   splitSection.className = 'chart-section';
   splitSection.style.marginTop = '24px';
 
-  if (ccStatus && ccStatus.detected && analysis.claude_code && analysis.claude_code.detected) {
-    const cc = analysis.claude_code;
-    const webTokens = 100;
-    const ccTokens = (cc.tokens_this_month || 0) > 0 ? 100 : 0;
-    const total = webTokens + ccTokens || 1;
+  const proj = r && r.stats && r.stats.projected_usage ? r.stats.projected_usage : null;
+  const currentMax = analysis.all_models ? analysis.all_models.max_ever : 0;
+
+  if (proj) {
+    const plans = [
+      { key: 'pro', name: 'Pro ($20)', price: 20 },
+      { key: 'max_100', name: 'Max $100', price: 100 },
+      { key: 'max_200', name: 'Max $200', price: 200 },
+    ];
+
+    const barsHtml = plans.map(p => {
+      const val = proj[p.key];
+      if (val === null || val === undefined) return '';
+      const isCurrent = p.key === analysis.current_plan;
+      const capped = Math.min(val, 150);
+      const barWidth = Math.max(2, Math.min(100, capped * 100 / 150));
+      const color = val > 100 ? 'var(--red)' : val > 80 ? 'var(--amber)' : 'var(--green)';
+      const label = val > 100 ? '⛔ Rate-limité' : val > 80 ? '⚠️ Risqué' : '✅ OK';
+      return `
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+          <div style="width:100px;font-size:12px;font-weight:${isCurrent ? '600' : '400'};color:${isCurrent ? 'var(--accent)' : 'var(--text-muted)'}">${p.name}${isCurrent ? ' ●' : ''}</div>
+          <div style="flex:1;height:24px;background:var(--bg-surface);border-radius:4px;overflow:hidden;position:relative">
+            <div style="width:${barWidth}%;height:100%;background:${color};border-radius:4px;transition:width 0.3s"></div>
+            <div style="position:absolute;right:${val > 100 ? 'auto' : '8px'};left:${val > 100 ? '8px' : 'auto'};top:50%;transform:translateY(-50%);font-size:11px;color:white;font-weight:500">${val}%</div>
+          </div>
+          <div style="width:100px;font-size:11px;color:var(--text-dim)">${label}</div>
+        </div>
+      `;
+    }).join('');
 
     splitSection.innerHTML = `
       <div class="chart-header">
         <div>
-          <div class="chart-title">Répartition de l'usage</div>
-          <div class="chart-subtitle">Chat web vs Claude Code (tokens ce mois)</div>
+          <div class="chart-title">Projection sur les plans</div>
+          <div class="chart-subtitle">Si ton usage actuel (pic ${currentMax}%) était sur un autre plan, tu serais à :</div>
         </div>
       </div>
       <div class="chart-box">
-        <div style="display:flex;gap:2px;height:40px;border-radius:6px;overflow:hidden;margin-bottom:12px">
-          <div style="flex:${webTokens};background:var(--amber);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:600">Web ${Math.round(webTokens/total*100)}%</div>
-          <div style="flex:${ccTokens};background:var(--blue);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:600">${ccTokens > 0 ? 'Code ' + Math.round(ccTokens/total*100) + '%' : ''}</div>
-        </div>
-        <div style="font-size:12px;color:var(--text-muted)">
-          💻 Claude Code : <strong>${formatTokens(cc.tokens_this_month || 0)}</strong> tokens · <strong>$${(cc.cost_equivalent_this_month || 0).toFixed(2)}</strong>/mois
-          <br>Coût API équivalent vs abonnement ${analysis.current_plan_price ? `$${analysis.current_plan_price}/mois` : 'N/A'}
+        ${barsHtml}
+        <div style="margin-top:12px;font-size:11px;color:var(--text-dim)">
+          Barres : % d'utilisation projeté. Au-delà de 100% = rate-limité. Inclut le chat web + Claude Code + Desktop.
         </div>
       </div>
     `;
@@ -293,32 +313,16 @@ async function loadOverview() {
     splitSection.innerHTML = `
       <div class="chart-header">
         <div>
-          <div class="chart-title">Répartition de l'usage</div>
-          <div class="chart-subtitle">Chat web vs Claude Code</div>
+          <div class="chart-title">Projection sur les plans</div>
+          <div class="chart-subtitle">Pas assez de données pour projeter.</div>
         </div>
       </div>
       <div class="chart-box" style="padding:24px;text-align:center;color:var(--text-dim)">
-        <p>Claude Code non détecté. Vérifie que le répertoire ~/.claude/ est accessible.</p>
+        <p>Importe des données ou lance un scraping pour voir les projections.</p>
       </div>
     `;
   }
   document.getElementById('hourlyChart').parentElement.parentElement.after(splitSection);
-
-  const recoEl = document.getElementById('overviewReco');
-  if (r && analysis.claude_code && analysis.claude_code.detected) {
-    const cc = analysis.claude_code;
-    const clauseCode = document.createElement('div');
-    clauseCode.style.cssText = 'margin-top:12px;padding:12px 16px;background:var(--blue-soft);border:1px solid rgba(59,130,246,0.2);border-radius:var(--radius);font-size:12px;color:var(--text-muted);line-height:1.6';
-    clauseCode.innerHTML = `
-      <strong style="color:var(--blue)">💻 Contexte Claude Code :</strong><br>
-      Tu utilises principalement Claude Code (${cc.tokens_this_month ? 'X% de ta consommation en tokens' : 'données limitées'}).<br>
-      Coût API équivalent ce mois : <strong>$${(cc.cost_equivalent_this_month || 0).toFixed(2)}</strong> — ton abonnement ${analysis.current_plan} à $${analysis.current_plan_price}/mois est ${
-        (cc.cost_equivalent_this_month || 0) < analysis.current_plan_price ? '✅ rentable' :
-        (cc.cost_equivalent_this_month || 0) > analysis.current_plan_price * 1.5 ? '⚠️ sous-dimensionné' : '✅ correct'
-      }.
-    `;
-    recoEl.after(clauseCode);
-  }
 
   setTimeout(addExportButtons, 100);
 }
@@ -779,6 +783,19 @@ function renderPlansTable(plans, analysis) {
     rows.push(['Ta moyenne (ce mois)', () => lastMonth.avg_all_models + '%']);
   }
 
+  const proj = analysis.recommendation && analysis.recommendation.stats
+    ? analysis.recommendation.stats.projected_usage
+    : null;
+  if (proj) {
+    rows.push(['Ton usage projeté', k => {
+      const val = proj[k];
+      if (val === null || val === undefined) return '-';
+      const color = val > 100 ? 'var(--red)' : val > 80 ? 'var(--amber)' : 'var(--green)';
+      const label = val > 100 ? ' ⛔' : val > 80 ? ' ⚠️' : ' ✅';
+      return `<span style="color:${color};font-weight:600">${val}%${label}</span>`;
+    }]);
+  }
+
   let tbody = '';
   rows.forEach(([label, fn]) => {
     tbody += `<tr><td style="font-weight:500">${label}</td>`;
@@ -939,6 +956,24 @@ async function saveClaudeCodeSettings() {
 // ============================================================
 // CLAUDE CODE
 // ============================================================
+async function triggerClaudeCodeScan() {
+  const btn = document.getElementById('btnScanClaudeCode');
+  if (btn) { btn.disabled = true; btn.textContent = 'Scan en cours…'; }
+  try {
+    const res = await fetch('/api/claude-code/scan', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      loadClaudeCodeData();
+    } else {
+      alert('Scan échoué : ' + (data.message || 'Erreur inconnue'));
+    }
+  } catch (e) {
+    alert('Erreur lors du scan : ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Lancer le scan'; }
+  }
+}
+
 async function loadClaudeCodeData() {
   try {
     const statusRes = await fetch('/api/claude-code/status');
@@ -991,8 +1026,8 @@ function renderClaudeCodeCards(cc) {
   const cards = [
     { label: 'Sessions ce mois', value: cc.sessions_this_month || 0, unit: '' },
     { label: 'Tokens ce mois', value: formatNumber(cc.tokens_this_month || 0), unit: '' },
-    { label: 'Coût API équiv.', value: `$${(cc.cost_equivalent_this_month || 0).toFixed(2)}`, unit: '' },
-    { label: 'Modèle principal', value: (cc.primary_model || 'N/A').split('-')[1].toUpperCase(), unit: '' },
+    { label: 'Coût API équiv.', value: `$${(cc.cost_equivalent_this_month || 0).toFixed(0)}`, unit: 'si facturé au token' },
+    { label: 'Modèle principal', value: ((cc.primary_model || 'N/A').split('-')[1] || cc.primary_model || 'N/A').toUpperCase(), unit: '' },
   ];
   const html = cards.map(card => `
     <div class="card">
@@ -1008,7 +1043,8 @@ function renderClaudeCodeDaily(daily) {
   const ctx = document.getElementById('claudeCodeDailyChart');
   if (!ctx) return;
   kill('claudeCodeDailyChart');
-  const chartData = {
+  const hasModelBreakdown = daily.some(d => d.opus_tokens || d.sonnet_tokens || d.haiku_tokens);
+  const chartData = hasModelBreakdown ? {
     labels: daily.map(d => d.date.split('-')[2]),
     datasets: [
       {
@@ -1033,6 +1069,15 @@ function renderClaudeCodeDaily(daily) {
         stack: 'tokens',
       },
     ],
+  } : {
+    labels: daily.map(d => d.date.split('-')[2]),
+    datasets: [{
+      label: 'Tokens',
+      data: daily.map(d => d.total_tokens || 0),
+      backgroundColor: 'rgba(99, 102, 241, 0.5)',
+      borderColor: 'rgb(99, 102, 241)',
+      borderWidth: 1,
+    }],
   };
   APP_STATE.charts['claudeCodeDailyChart'] = new Chart(ctx, {
     type: 'bar',
@@ -1122,7 +1167,7 @@ function renderClaudeCodeSessions(sessions) {
             <td>${new Date(s.start_time).toLocaleDateString('fr-FR')}</td>
             <td>${s.duration_minutes}m</td>
             <td>${(s.project_path || 'Unknown').split('/').pop()}</td>
-            <td>${s.primary_model.split('-')[1].toUpperCase()}</td>
+            <td>${((s.primary_model || 'unknown').split('-')[1] || s.primary_model || '?').toUpperCase()}</td>
             <td>${formatNumber(s.total_tokens)}</td>
             <td>$${s.cost_usd.toFixed(2)}</td>
           </tr>

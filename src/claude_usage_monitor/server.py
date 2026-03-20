@@ -82,7 +82,11 @@ async def status():
 async def get_analysis():
     config = load_config()
     monthly_stats = db.get_monthly_peaks(months=6)
-    return analyze(db.get_entries(), config["plan"], monthly_stats=monthly_stats)
+    # Get Claude Code cost for recommendation logic
+    from .analyzer import _get_claude_code_analysis
+    cc_summary = _get_claude_code_analysis()
+    cc_cost = cc_summary.get("cost_equivalent_this_month", 0.0)
+    return analyze(db.get_entries(), config["plan"], monthly_stats=monthly_stats, claude_code_monthly_cost=cc_cost)
 
 
 @app.get("/api/entries")
@@ -248,14 +252,38 @@ async def get_claude_code_sessions(days: int = 30, project: str | None = None):
 
 @app.get("/api/claude-code/daily")
 async def get_claude_code_daily(days: int = 90):
-    """Get daily Claude Code aggregates."""
-    return db.get_claude_code_daily(days=days)
+    """Get daily Claude Code aggregates from sessions."""
+    sessions = db.get_claude_code_sessions(days=days)
+    daily = {}
+    for s in sessions:
+        date = (s.get("start_time") or "")[:10]
+        if not date:
+            continue
+        if date not in daily:
+            daily[date] = {"date": date, "sessions_count": 0, "total_tokens": 0, "cost_usd": 0.0}
+        daily[date]["sessions_count"] += 1
+        daily[date]["total_tokens"] += s.get("total_tokens", 0)
+        daily[date]["cost_usd"] += s.get("cost_usd", 0.0)
+    return sorted(daily.values(), key=lambda d: d["date"])
 
 
 @app.get("/api/claude-code/monthly")
 async def get_claude_code_monthly(months: int = 6):
-    """Get monthly Claude Code aggregates."""
-    return db.get_claude_code_monthly(months=months)
+    """Get monthly Claude Code aggregates from sessions."""
+    from datetime import datetime, timedelta
+    cutoff = (datetime.now() - timedelta(days=months * 31)).strftime("%Y-%m")
+    sessions = db.get_claude_code_sessions(days=months * 31)
+    monthly = {}
+    for s in sessions:
+        month = (s.get("start_time") or "")[:7]
+        if not month or month < cutoff:
+            continue
+        if month not in monthly:
+            monthly[month] = {"month": month, "sessions": 0, "total_tokens": 0, "cost_usd": 0.0}
+        monthly[month]["sessions"] += 1
+        monthly[month]["total_tokens"] += s.get("total_tokens", 0)
+        monthly[month]["cost_usd"] += s.get("cost_usd", 0.0)
+    return sorted(monthly.values(), key=lambda m: m["month"])
 
 
 @app.get("/api/claude-code/projects")
