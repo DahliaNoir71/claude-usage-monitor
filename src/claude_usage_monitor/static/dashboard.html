@@ -338,6 +338,18 @@ select, input[type="number"] {
   <div class="section" id="tab-cycles">
     <div class="page-title">Cycles</div>
 
+    <div class="chart-section">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">Peaks mensuels</div>
+          <div class="chart-subtitle">Pic All Models + Sonnet par mois — ligne pointillée = zone de risque (80%)</div>
+        </div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-wrap" style="height:280px"><canvas id="monthlyChart"></canvas></div>
+      </div>
+    </div>
+
     <div class="chart-row">
       <div class="chart-section">
         <div class="chart-header">
@@ -682,14 +694,64 @@ function renderEntriesTable(entries) {
 // CYCLES
 // ============================================================
 async function loadCycles() {
-  const [weekly, sonnet, resets] = await Promise.all([
+  const [monthly, weekly, sonnet, resets] = await Promise.all([
+    api('/api/monthly'),
     api('/api/weekly'),
     api('/api/sonnet-cycles'),
     api('/api/resets'),
   ]);
+  renderMonthlyChart(monthly);
   renderWeeklyChart(weekly);
   renderSonnetChart(sonnet);
   renderResetsTable(resets);
+}
+
+const MONTH_NAMES = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+
+function renderMonthlyChart(months) {
+  if (!months || !months.length) return;
+  kill('monthlyChart');
+  const labels = months.map(m => {
+    const [y, mo] = m.month.split('-');
+    return MONTH_NAMES[parseInt(mo) - 1] + ' ' + y.slice(2);
+  });
+  charts['monthlyChart'] = new Chart(document.getElementById('monthlyChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'All Models pic', data: months.map(m => m.max_all_models || 0), backgroundColor: C.accent, borderRadius: 4 },
+        { label: 'Sonnet pic', data: months.map(m => m.max_sonnet || 0), backgroundColor: C.pink, borderRadius: 4 },
+      ]
+    },
+    options: { ...baseOpts,
+      plugins: {
+        legend: { display: true, labels: { color: C.tick, boxWidth: 10 } },
+        annotation: undefined,
+      },
+      scales: { ...baseOpts.scales,
+        y: { ...baseOpts.scales.y, max: 100, ticks: { ...baseOpts.scales.y.ticks, callback: v => v + '%' } },
+      },
+    },
+    plugins: [{
+      id: 'rateLimitLine',
+      afterDraw(chart) {
+        const yScale = chart.scales.y;
+        const y = yScale.getPixelForValue(80);
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.setLineDash([6, 4]);
+        ctx.strokeStyle = C.red;
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(chart.chartArea.left, y);
+        ctx.lineTo(chart.chartArea.right, y);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }]
+  });
 }
 
 function renderWeeklyChart(weeks) {
@@ -720,7 +782,7 @@ function renderSonnetChart(cycles) {
   charts['sonnetChart'] = new Chart(document.getElementById('sonnetChart'), {
     type: 'bar',
     data: {
-      labels: cycles.map((_, i) => 'C' + (i + 1)),
+      labels: cycles.map((c, i) => 'C' + (i + 1)),
       datasets: [{
         data: cycles.map(c => c.peak),
         backgroundColor: cycles.map(c => pctColorHex(c.peak)),
@@ -728,8 +790,20 @@ function renderSonnetChart(cycles) {
       }]
     },
     options: { ...baseOpts,
+      plugins: { ...baseOpts.plugins, tooltip: {
+        callbacks: {
+          title: (items) => {
+            const idx = items[0].dataIndex;
+            const c = cycles[idx];
+            const start = new Date(c.start).toLocaleDateString('fr');
+            const end = new Date(c.end).toLocaleDateString('fr');
+            return 'Cycle ' + (idx + 1) + ' : ' + start + ' — ' + end;
+          }
+        }
+      }},
       scales: { ...baseOpts.scales,
         y: { ...baseOpts.scales.y, max: 100, ticks: { ...baseOpts.scales.y.ticks, callback: v => v + '%' } },
+        x: { ...baseOpts.scales.x, ticks: { ...baseOpts.scales.x.ticks, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 } },
       }
     }
   });
