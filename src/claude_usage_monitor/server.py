@@ -65,7 +65,8 @@ async def status():
 @app.get("/api/analysis")
 async def get_analysis():
     config = load_config()
-    return analyze(db.get_entries(), config["plan"])
+    monthly_stats = db.get_monthly_peaks(months=6)
+    return analyze(db.get_entries(), config["plan"], monthly_stats=monthly_stats)
 
 
 @app.get("/api/entries")
