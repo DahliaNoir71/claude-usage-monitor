@@ -1108,8 +1108,24 @@ async function loadSettings() {
       <label class="toggle"><input type="checkbox" id="cfg-export" ${config.auto_export_csv?'checked':''} onchange="settingsCache.auto_export_csv=this.checked"><span class="toggle-slider"></span></label>
     </div>
     <div class="setting-row">
-      <div><div class="setting-label">Notifications</div><div class="setting-desc">Activer les notifications</div></div>
+      <div><div class="setting-label">Notifications</div><div class="setting-desc">Activer les notifications desktop</div></div>
       <label class="toggle"><input type="checkbox" id="cfg-notif" ${config.notifications_enabled?'checked':''} onchange="settingsCache.notifications_enabled=this.checked"><span class="toggle-slider"></span></label>
+    </div>
+    <div class="setting-row">
+      <div><div class="setting-label">Seuil All Models</div><div class="setting-desc">Alerte si All Models dépasse ce %</div></div>
+      <input type="number" value="${config.alert_all_models_threshold || 80}" min="10" max="100" onchange="settingsCache.alert_all_models_threshold=parseInt(this.value)">
+    </div>
+    <div class="setting-row">
+      <div><div class="setting-label">Seuil Sonnet</div><div class="setting-desc">Alerte si Sonnet dépasse ce %</div></div>
+      <input type="number" value="${config.alert_sonnet_threshold || 80}" min="10" max="100" onchange="settingsCache.alert_sonnet_threshold=parseInt(this.value)">
+    </div>
+    <div class="setting-row">
+      <div><div class="setting-label">Alerte sur reset</div><div class="setting-desc">Notifier quand un reset est détecté</div></div>
+      <label class="toggle"><input type="checkbox" ${config.alert_on_reset!==false?'checked':''} onchange="settingsCache.alert_on_reset=this.checked"><span class="toggle-slider"></span></label>
+    </div>
+    <div class="setting-row">
+      <div><div class="setting-label">Cooldown alertes</div><div class="setting-desc">Minutes entre deux alertes du même type</div></div>
+      <input type="number" value="${config.alert_cooldown_minutes || 60}" min="5" max="1440" onchange="settingsCache.alert_cooldown_minutes=parseInt(this.value)">
     </div>
     <div class="setting-row">
       <div><div class="setting-label">Lancer au démarrage</div><div class="setting-desc">Démarrer automatiquement avec Windows</div></div>
