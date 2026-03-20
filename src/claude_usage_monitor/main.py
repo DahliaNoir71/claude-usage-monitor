@@ -201,12 +201,21 @@ def _create_tray_icon(scheduler: ScrapeScheduler):
         webbrowser.open(f"http://{SERVER_HOST}:{SERVER_PORT}")
 
     def scrape_now(*_):
-        threading.Thread(target=lambda: asyncio.run(scheduler._do_scrape()), daemon=True).start()
+        def _run():
+            try:
+                logger.info("Manual scrape triggered from tray menu")
+                asyncio.run(scheduler._do_scrape())
+                _send_notification("Scrape terminé", "Données mises à jour.")
+            except Exception as e:
+                logger.error(f"Tray scrape failed: {e}")
+                _send_notification("Scrape échoué", str(e))
+        threading.Thread(target=_run, daemon=True).start()
 
     def export_csv(*_):
         fp = db.export_csv()
         if fp:
             logger.info(f"Exported: {fp}")
+            _send_notification("Export CSV", f"Exporté : {Path(fp).name}")
 
     def quit_app(icon, *_):
         scheduler.stop()
