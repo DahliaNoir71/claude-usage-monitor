@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Usage Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #0c0f1a;
+  --bg-sidebar: #0a0d16;
+  --bg-card: #151929;
+  --bg-card-hover: #1a1f35;
+  --bg-surface: #1c2137;
+  --border: #2a3050;
+  --border-hover: #3a4570;
+  --text: #e8e6e1;
+  --text-muted: #8a8880;
+  --text-dim: #5a5850;
+  --accent: #6366f1;
+  --accent-soft: rgba(99,102,241,0.12);
+  --green: #22c55e;
+  --green-soft: rgba(34,197,94,0.12);
+  --amber: #f59e0b;
+  --amber-soft: rgba(245,158,11,0.12);
+  --red: #ef4444;
+  --red-soft: rgba(239,68,68,0.12);
+  --blue: #3b82f6;
+  --blue-soft: rgba(59,130,246,0.12);
+  --font: 'DM Sans', -apple-system, sans-serif;
+  --mono: 'DM Mono', 'SF Mono', monospace;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --sidebar-w: 220px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  min-height: 100vh;
+  display: flex;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  position: fixed; top: 0; left: 0; bottom: 0;
+  width: var(--sidebar-w);
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  padding: 24px 0;
+  z-index: 100;
+}
+.sidebar-logo {
+  padding: 0 20px; margin-bottom: 32px;
+  font-size: 15px; font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.sidebar-logo span { color: var(--accent); }
+.sidebar-nav { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
+.sidebar-link {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 8px;
+  font-size: 13px; font-weight: 500;
+  color: var(--text-muted); text-decoration: none;
+  cursor: pointer; transition: all 0.15s; border: none; background: none;
+  width: 100%; text-align: left; font-family: var(--font);
+}
+.sidebar-link:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+.sidebar-link.active { color: var(--text); background: var(--accent-soft); }
+.sidebar-link.active .sidebar-icon { color: var(--accent); }
+.sidebar-icon { font-size: 16px; width: 20px; text-align: center; }
+.sidebar-footer {
+  padding: 16px 20px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-dim);
+}
+
+/* ── Main ── */
+.main {
+  margin-left: var(--sidebar-w);
+  flex: 1; padding: 32px 40px 60px;
+  min-height: 100vh;
+  max-width: 1100px;
+}
+.page-title {
+  font-size: 20px; font-weight: 600; margin-bottom: 24px;
+  letter-spacing: -0.01em;
+}
+
+/* ── Cards ── */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.card {
+  background: var(--bg-card); border-radius: var(--radius); padding: 16px 18px;
+  border: 1px solid var(--border); transition: border-color 0.15s;
+}
+.card:hover { border-color: var(--border-hover); }
+.card-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+.card-value { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; font-family: var(--mono); }
+.card-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.card-value.green { color: var(--green); }
+.card-value.amber { color: var(--amber); }
+.card-value.red { color: var(--red); }
+.card-value.blue { color: var(--blue); }
+.card-value.accent { color: var(--accent); }
+
+/* ── Recommendation ── */
+.reco {
+  padding: 16px 20px; border-radius: var(--radius-lg);
+  margin-bottom: 24px; border: 1px solid;
+}
+.reco.downgrade { background: var(--green-soft); border-color: rgba(34,197,94,0.2); }
+.reco.maintain { background: var(--blue-soft); border-color: rgba(59,130,246,0.2); }
+.reco.upgrade { background: var(--amber-soft); border-color: rgba(245,158,11,0.2); }
+.reco-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.reco.downgrade .reco-title { color: var(--green); }
+.reco.maintain .reco-title { color: var(--blue); }
+.reco.upgrade .reco-title { color: var(--amber); }
+.reco-body { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+.reco-caveats { margin-top: 8px; font-size: 12px; color: var(--text-dim); font-style: italic; }
+.reco-badge {
+  display: inline-block; font-size: 11px; font-weight: 500;
+  padding: 2px 8px; border-radius: 6px; margin-top: 6px;
+}
+
+/* ── Charts ── */
+.chart-section { margin-bottom: 24px; }
+.chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.chart-title { font-size: 14px; font-weight: 500; color: var(--text-muted); }
+.chart-subtitle { font-size: 12px; color: var(--text-dim); }
+.chart-box {
+  background: var(--bg-card); border-radius: var(--radius-lg);
+  border: 1px solid var(--border); padding: 20px;
+}
+.chart-wrap { position: relative; width: 100%; }
+.chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+
+/* ── Toolbar ── */
+.toolbar {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 20px; flex-wrap: wrap;
+}
+.btn {
+  font-family: var(--font); font-size: 13px; font-weight: 500;
+  padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  transition: all 0.15s; text-decoration: none;
+}
+.btn:hover { background: var(--bg-card); color: var(--text); border-color: var(--border-hover); }
+.btn-accent { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.btn-accent:hover { background: var(--accent); color: white; }
+.btn-danger { color: var(--red); }
+.btn-danger:hover { background: var(--red-soft); }
+.toolbar-spacer { flex: 1; }
+.toolbar-status { font-size: 13px; color: var(--text-muted); }
+
+/* ── Tables ── */
+.table-section { margin-bottom: 24px; }
+.table-box {
+  background: var(--bg-card); border-radius: var(--radius-lg);
+  border: 1px solid var(--border); overflow-x: auto;
+}
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  text-align: left; padding: 10px 16px; color: var(--text-dim);
+  font-weight: 500; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.05em; border-bottom: 1px solid var(--border);
+}
+td { padding: 8px 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--bg-card-hover); }
+.btn-delete {
+  background: none; border: none; color: var(--text-dim);
+  cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px;
+}
+.btn-delete:hover { color: var(--red); background: var(--red-soft); }
+
+/* ── Settings ── */
+.settings-panel {
+  background: var(--bg-card); border-radius: var(--radius-lg);
+  border: 1px solid var(--border); padding: 24px; margin-bottom: 20px;
+}
+.settings-title { font-size: 16px; font-weight: 500; margin-bottom: 16px; }
+.setting-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.setting-row:last-child { border-bottom: none; }
+.setting-label { font-size: 13px; }
+.setting-desc { font-size: 12px; color: var(--text-dim); }
+select, input[type="number"] {
+  font-family: var(--font); font-size: 13px;
+  background: var(--bg-surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px;
+}
+.toggle { position: relative; width: 40px; height: 22px; cursor: pointer; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0; background: var(--bg-surface);
+  border-radius: 11px; border: 1px solid var(--border); transition: 0.2s;
+}
+.toggle-slider::before {
+  content: ''; position: absolute; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--text-dim);
+  top: 2px; left: 2px; transition: 0.2s;
+}
+.toggle input:checked + .toggle-slider { background: var(--accent-soft); border-color: var(--accent); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(18px); background: var(--accent); }
+
+.info-block {
+  background: var(--bg-surface); border-radius: var(--radius);
+  padding: 14px 16px; font-size: 13px; color: var(--text-muted);
+  line-height: 1.8;
+}
+.info-block strong { color: var(--text); font-weight: 500; }
+
+/* ── Sections ── */
+.section { display: none; }
+.section.active { display: block; }
+
+/* ── Loading ── */
+.loading { text-align: center; padding: 4rem; color: var(--text-dim); }
+.loading-spinner {
+  width: 32px; height: 32px; border: 3px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin 0.8s linear infinite; margin: 0 auto 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .sidebar { width: 60px; padding: 16px 0; }
+  .sidebar-logo { display: none; }
+  .sidebar-link span { display: none; }
+  .sidebar-link { justify-content: center; padding: 10px; }
+  .sidebar-icon { margin: 0; }
+  .sidebar-footer { display: none; }
+  .main { margin-left: 60px; padding: 24px 16px; }
+  .chart-row { grid-template-columns: 1fr; }
+  .cards { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav class="sidebar">
+  <div class="sidebar-logo"><span>Claude</span> Monitor</div>
+  <div class="sidebar-nav">
+    <button class="sidebar-link active" data-tab="overview" onclick="switchTab('overview')">
+      <span class="sidebar-icon">&#9671;</span><span>Vue d'ensemble</span>
+    </button>
+    <button class="sidebar-link" data-tab="history" onclick="switchTab('history')">
+      <span class="sidebar-icon">&#9776;</span><span>Historique</span>
+    </button>
+    <button class="sidebar-link" data-tab="cycles" onclick="switchTab('cycles')">
+      <span class="sidebar-icon">&#8634;</span><span>Cycles</span>
+    </button>
+    <button class="sidebar-link" data-tab="settings" onclick="switchTab('settings')">
+      <span class="sidebar-icon">&#9881;</span><span>Paramètres</span>
+    </button>
+  </div>
+  <div class="sidebar-footer" id="sidebarFooter">v2.0.1</div>
+</nav>
+
+<!-- Main content -->
+<div class="main">
+
+  <!-- OVERVIEW -->
+  <div class="section active" id="tab-overview">
+    <div class="page-title">Vue d'ensemble</div>
+    <div id="overviewCards" class="cards"></div>
+    <div id="overviewReco"></div>
+
+    <div class="chart-row">
+      <div class="chart-section">
+        <div class="chart-header">
+          <div>
+            <div class="chart-title">Vélocité quotidienne</div>
+            <div class="chart-subtitle">Min / Max All Models % par jour</div>
+          </div>
+        </div>
+        <div class="chart-box">
+          <div class="chart-wrap" style="height:260px"><canvas id="velocityChart"></canvas></div>
+        </div>
+      </div>
+      <div class="chart-section">
+        <div class="chart-header">
+          <div>
+            <div class="chart-title">Distribution horaire</div>
+            <div class="chart-subtitle">Nombre de mesures par heure</div>
+          </div>
+        </div>
+        <div class="chart-box">
+          <div class="chart-wrap" style="height:260px"><canvas id="hourlyChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="section" id="tab-history">
+    <div class="page-title">Historique</div>
+    <div class="toolbar" id="historyToolbar">
+      <button class="btn btn-accent" onclick="triggerScrape(this)">Scraper maintenant</button>
+      <label class="btn" style="cursor:pointer">
+        Importer CSV
+        <input type="file" id="csvFile" accept=".csv" style="display:none" onchange="importCSV()">
+      </label>
+      <a class="btn" href="/api/export/csv" target="_blank">Exporter CSV</a>
+      <div class="toolbar-spacer"></div>
+      <button class="btn btn-danger" onclick="if(confirm('Supprimer toutes les données ?')) clearData()">Supprimer tout</button>
+    </div>
+
+    <div class="chart-section">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">Historique complet</div>
+          <div class="chart-subtitle" id="historyCount"></div>
+        </div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-wrap" style="height:300px"><canvas id="historyChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="table-section">
+      <div class="chart-header"><div class="chart-title">Données</div></div>
+      <div class="table-box" id="entriesTable"></div>
+    </div>
+  </div>
+
+  <!-- CYCLES -->
+  <div class="section" id="tab-cycles">
+    <div class="page-title">Cycles</div>
+
+    <div class="chart-row">
+      <div class="chart-section">
+        <div class="chart-header">
+          <div>
+            <div class="chart-title">Peaks hebdomadaires</div>
+            <div class="chart-subtitle">All Models + Sonnet pics par semaine</div>
+          </div>
+        </div>
+        <div class="chart-box">
+          <div class="chart-wrap" style="height:260px"><canvas id="weeklyChart"></canvas></div>
+        </div>
+      </div>
+      <div class="chart-section">
+        <div class="chart-header">
+          <div>
+            <div class="chart-title">Cycles Sonnet</div>
+            <div class="chart-subtitle">Pics par cycle (~5h)</div>
+          </div>
+        </div>
+        <div class="chart-box">
+          <div class="chart-wrap" style="height:260px"><canvas id="sonnetChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-section">
+      <div class="chart-header"><div class="chart-title">Resets détectés</div></div>
+      <div class="table-box" id="resetsTable"></div>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="section" id="tab-settings">
+    <div class="page-title">Paramètres</div>
+    <div class="settings-panel">
+      <div class="settings-title">Configuration</div>
+      <div id="settingsForm"></div>
+      <div style="margin-top:16px;text-align:right">
+        <button class="btn btn-accent" onclick="saveSettings()">Sauvegarder</button>
+      </div>
+    </div>
+    <div class="settings-panel">
+      <div class="settings-title">Informations</div>
+      <div class="info-block" id="appInfo">Chargement...</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// API helper
+// ============================================================
+const api = async (path, opts) => {
+  const r = await fetch(path, opts);
+  return r.json();
+};
+
+// ============================================================
+// State
+// ============================================================
+let charts = {};
+let loadedTabs = {};
+
+// ============================================================
+// Color helpers
+// ============================================================
+function pctColor(v) {
+  if (v < 30) return 'amber';
+  if (v < 70) return 'blue';
+  if (v < 90) return 'green';
+  return 'red';
+}
+function pctColorHex(v) {
+  if (v < 30) return '#f59e0b';
+  if (v < 70) return '#3b82f6';
+  if (v < 90) return '#22c55e';
+  return '#ef4444';
+}
+
+const C = {
+  accent: '#6366f1', accentA: 'rgba(99,102,241,0.15)',
+  green: '#22c55e', greenA: 'rgba(34,197,94,0.15)',
+  amber: '#f59e0b', amberA: 'rgba(245,158,11,0.15)',
+  red: '#ef4444', redA: 'rgba(239,68,68,0.15)',
+  blue: '#3b82f6', blueA: 'rgba(59,130,246,0.15)',
+  pink: '#ec4899', pinkA: 'rgba(236,72,153,0.15)',
+  teal: '#14b8a6', gray: '#6b7280',
+  grid: 'rgba(255,255,255,0.04)', tick: '#5a5850',
+};
+
+const baseOpts = {
+  responsive: true, maintainAspectRatio: false,
+  plugins: { legend: { display: false } },
+  scales: {
+    y: { ticks: { color: C.tick }, grid: { color: C.grid } },
+    x: { ticks: { color: C.tick, maxRotation: 45 }, grid: { display: false } },
+  },
+};
+
+function kill(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+
+// ============================================================
+// Tab navigation
+// ============================================================
+function switchTab(name) {
+  document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
+  document.querySelector(`.sidebar-link[data-tab="${name}"]`).classList.add('active');
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  location.hash = name;
+  if (!loadedTabs[name]) loadTab(name);
+}
+
+async function loadTab(name) {
+  try {
+    if (name === 'overview') await loadOverview();
+    else if (name === 'history') await loadHistory();
+    else if (name === 'cycles') await loadCycles();
+    else if (name === 'settings') await loadSettings();
+    loadedTabs[name] = true;
+  } catch (e) {
+    console.error('Tab load error:', name, e);
+  }
+}
+
+// ============================================================
+// OVERVIEW
+// ============================================================
+async function loadOverview() {
+  const [analysis, status] = await Promise.all([
+    api('/api/analysis'),
+    api('/api/status'),
+  ]);
+
+  // Cards
+  const el = document.getElementById('overviewCards');
+  if (analysis.status === 'no_data') {
+    el.innerHTML = '<div class="card"><div class="card-label">Aucune donnée</div><div class="card-sub">Importe un CSV ou lance un scraping depuis l\'onglet Historique.</div></div>';
+    return;
+  }
+
+  const latest = analysis.latest;
+  const r = analysis.recommendation;
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-label">All Models</div>
+      <div class="card-value ${pctColor(latest.all_models_pct)}">${latest.all_models_pct}%</div>
+      <div class="card-sub">Max: ${analysis.all_models.max_ever}% &middot; Moy: ${analysis.all_models.avg}%</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Sonnet</div>
+      <div class="card-value ${pctColor(latest.sonnet_pct || 0)}">${latest.sonnet_pct || 0}%</div>
+      <div class="card-sub">${latest.reset_sonnet || '-'}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Jours couverts</div>
+      <div class="card-value accent">${analysis.days_covered}</div>
+      <div class="card-sub">${status.entries_count} entrées</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Pic max All Models</div>
+      <div class="card-value ${pctColor(analysis.all_models.max_ever)}">${analysis.all_models.max_ever}%</div>
+      <div class="card-sub">Moyenne: ${analysis.all_models.avg}%</div>
+    </div>
+  `;
+
+  // Recommendation
+  renderReco(document.getElementById('overviewReco'), r);
+
+  // Velocity chart
+  renderVelocityChart(analysis);
+
+  // Hourly chart
+  renderHourlyChart(analysis);
+}
+
+function renderReco(container, r) {
+  if (!r) return;
+  const cls = r.action.includes('downgrade') ? 'downgrade' : r.action === 'upgrade' ? 'upgrade' : 'maintain';
+  const icons = { downgrade: '&#128176;', maintain: '&#9989;', upgrade: '&#128200;', consider_downgrade: '&#128161;' };
+  const icon = icons[r.action] || '&#128202;';
+  container.innerHTML = `
+    <div class="reco ${cls}">
+      <div class="reco-title">${icon} ${r.plan_name} recommandé</div>
+      <div class="reco-body">${r.reason}</div>
+      ${r.savings_yearly > 0 ? `<div class="reco-body" style="margin-top:4px;font-weight:500">Économie : $${r.savings_monthly}/mois ($${r.savings_yearly}/an)</div>` : ''}
+      ${r.caveats && r.caveats.length ? `<div class="reco-caveats">${r.caveats.join(' ')}</div>` : ''}
+      <div class="reco-badge" style="background:var(--bg-surface);color:var(--text-dim)">${r.action.replace('_', ' ')} &middot; confiance ${r.confidence}</div>
+    </div>
+  `;
+}
+
+function renderVelocityChart(data) {
+  if (!data.daily_velocity || !data.daily_velocity.length) return;
+  kill('velocityChart');
+  const dv = data.daily_velocity;
+  charts['velocityChart'] = new Chart(document.getElementById('velocityChart'), {
+    type: 'bar',
+    data: {
+      labels: dv.map(d => d.date.slice(5)),
+      datasets: [
+        { label: 'Min', data: dv.map(d => d.min), backgroundColor: 'rgba(99,102,241,0.25)', borderRadius: 4 },
+        { label: 'Delta', data: dv.map(d => d.delta), backgroundColor: C.accent, borderRadius: 4 },
+      ]
+    },
+    options: { ...baseOpts,
+      plugins: { ...baseOpts.plugins, tooltip: { mode: 'index' } },
+      scales: {
+        x: { ...baseOpts.scales.x, stacked: true, ticks: { ...baseOpts.scales.x.ticks, autoSkip: true, maxTicksLimit: 15 } },
+        y: { ...baseOpts.scales.y, stacked: true, ticks: { ...baseOpts.scales.y.ticks, callback: v => v + '%' } },
+      }
+    }
+  });
+}
+
+function renderHourlyChart(data) {
+  if (!data.hourly_distribution) return;
+  kill('hourlyChart');
+  const hours = Array.from({length: 24}, (_, i) => i);
+  const dist = data.hourly_distribution;
+  charts['hourlyChart'] = new Chart(document.getElementById('hourlyChart'), {
+    type: 'bar',
+    data: {
+      labels: hours.map(h => h + 'h'),
+      datasets: [{
+        data: hours.map(h => dist[h] || 0),
+        backgroundColor: hours.map(h => (dist[h] || 0) > 0 ? C.accent : C.grid),
+        borderRadius: 4,
+      }]
+    },
+    options: baseOpts,
+  });
+}
+
+// ============================================================
+// HISTORY
+// ============================================================
+async function loadHistory() {
+  const entries = await api('/api/entries');
+  document.getElementById('historyCount').textContent = entries.length + ' entrées';
+  renderHistoryChart(entries);
+  renderEntriesTable(entries);
+}
+
+function renderHistoryChart(entries) {
+  if (!entries || !entries.length) return;
+  kill('historyChart');
+  const step = Math.max(1, Math.floor(entries.length / 200));
+  const sampled = entries.filter((_, i) => i % step === 0);
+  charts['historyChart'] = new Chart(document.getElementById('historyChart'), {
+    type: 'line',
+    data: {
+      labels: sampled.map(e => { const d = new Date(e.timestamp); return (d.getMonth()+1)+'/'+d.getDate()+' '+d.getHours()+'h'; }),
+      datasets: [
+        { label: 'All Models %', data: sampled.map(e => e.all_models_pct), borderColor: C.accent, backgroundColor: C.accentA, fill: true, tension: 0.2, pointRadius: 1 },
+        { label: 'Sonnet %', data: sampled.map(e => e.sonnet_pct), borderColor: C.pink, backgroundColor: C.pinkA, fill: true, tension: 0.2, pointRadius: 1 },
+      ]
+    },
+    options: { ...baseOpts,
+      plugins: { legend: { display: true, labels: { color: C.tick, boxWidth: 10 } } },
+      scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, max: 100 } }
+    }
+  });
+}
+
+function renderEntriesTable(entries) {
+  const recent = entries.slice(-50).reverse();
+  if (!recent.length) {
+    document.getElementById('entriesTable').innerHTML = '<p style="padding:16px;color:var(--text-dim)">Aucune entrée</p>';
+    return;
+  }
+  const rows = recent.map(e => {
+    const d = new Date(e.timestamp);
+    return `<tr>
+      <td>${d.toLocaleDateString('fr')}</td>
+      <td>${d.toLocaleTimeString('fr', {hour:'2-digit',minute:'2-digit'})}</td>
+      <td style="color:${pctColorHex(e.all_models_pct)}">${e.all_models_pct}%</td>
+      <td>${e.sonnet_pct || 0}%</td>
+      <td style="font-size:11px">${e.reset_all_models || '-'}</td>
+      <td style="font-size:11px">${e.reset_sonnet || '-'}</td>
+      <td style="font-size:11px;color:var(--text-dim)">${e.source || ''}</td>
+      <td><button class="btn-delete" onclick="deleteEntry(${e.id}, this)" title="Supprimer">&#10005;</button></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('entriesTable').innerHTML = `
+    <table>
+      <thead><tr><th>Date</th><th>Heure</th><th>All Models</th><th>Sonnet</th><th>Reset All</th><th>Reset Sonnet</th><th>Source</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ============================================================
+// CYCLES
+// ============================================================
+async function loadCycles() {
+  const [weekly, sonnet, resets] = await Promise.all([
+    api('/api/weekly'),
+    api('/api/sonnet-cycles'),
+    api('/api/resets'),
+  ]);
+  renderWeeklyChart(weekly);
+  renderSonnetChart(sonnet);
+  renderResetsTable(resets);
+}
+
+function renderWeeklyChart(weeks) {
+  if (!weeks || !weeks.length) return;
+  kill('weeklyChart');
+  charts['weeklyChart'] = new Chart(document.getElementById('weeklyChart'), {
+    type: 'bar',
+    data: {
+      labels: weeks.map(w => w.week || w.week_start || ''),
+      datasets: [
+        { label: 'All Models pic', data: weeks.map(w => w.max_all_models || 0), backgroundColor: C.accent, borderRadius: 4 },
+        { label: 'Sonnet pic', data: weeks.map(w => w.max_sonnet || 0), backgroundColor: C.pink, borderRadius: 4 },
+      ]
+    },
+    options: { ...baseOpts,
+      plugins: { legend: { display: true, labels: { color: C.tick, boxWidth: 10 } } },
+      scales: { ...baseOpts.scales,
+        y: { ...baseOpts.scales.y, max: 100, ticks: { ...baseOpts.scales.y.ticks, callback: v => v + '%' } },
+        x: { ...baseOpts.scales.x, ticks: { ...baseOpts.scales.x.ticks, autoSkip: true, maxTicksLimit: 12 } }
+      }
+    }
+  });
+}
+
+function renderSonnetChart(cycles) {
+  if (!cycles || !cycles.length) return;
+  kill('sonnetChart');
+  charts['sonnetChart'] = new Chart(document.getElementById('sonnetChart'), {
+    type: 'bar',
+    data: {
+      labels: cycles.map((_, i) => 'C' + (i + 1)),
+      datasets: [{
+        data: cycles.map(c => c.peak),
+        backgroundColor: cycles.map(c => pctColorHex(c.peak)),
+        borderRadius: 4,
+      }]
+    },
+    options: { ...baseOpts,
+      scales: { ...baseOpts.scales,
+        y: { ...baseOpts.scales.y, max: 100, ticks: { ...baseOpts.scales.y.ticks, callback: v => v + '%' } },
+      }
+    }
+  });
+}
+
+function renderResetsTable(resets) {
+  const el = document.getElementById('resetsTable');
+  if (!resets || !resets.length) {
+    el.innerHTML = '<p style="padding:16px;color:var(--text-dim)">Aucun reset détecté</p>';
+    return;
+  }
+  const rows = resets.map(r => {
+    const d = new Date(r.timestamp);
+    return `<tr>
+      <td>${d.toLocaleDateString('fr')}</td>
+      <td>${d.toLocaleTimeString('fr', {hour:'2-digit',minute:'2-digit'})}</td>
+      <td>${r.from_pct}%</td>
+      <td>${r.to_pct}%</td>
+      <td style="color:var(--red)">-${r.drop}%</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `
+    <table>
+      <thead><tr><th>Date</th><th>Heure</th><th>De</th><th>A</th><th>Drop</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ============================================================
+// SETTINGS
+// ============================================================
+let settingsCache = {};
+
+async function loadSettings() {
+  const [config, status] = await Promise.all([
+    api('/api/config'),
+    api('/api/status'),
+  ]);
+  settingsCache = { ...config };
+  const form = document.getElementById('settingsForm');
+  form.innerHTML = `
+    <div class="setting-row">
+      <div><div class="setting-label">Plan</div><div class="setting-desc">Ton abonnement Claude</div></div>
+      <select id="cfg-plan" onchange="settingsCache.plan=this.value">
+        <option value="free" ${config.plan==='free'?'selected':''}>Free</option>
+        <option value="pro" ${config.plan==='pro'?'selected':''}>Pro ($20)</option>
+        <option value="max_100" ${config.plan==='max_100'?'selected':''}>Max $100</option>
+        <option value="max_200" ${config.plan==='max_200'?'selected':''}>Max $200</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <div><div class="setting-label">Scraping automatique</div><div class="setting-desc">Scraper périodiquement en arrière-plan</div></div>
+      <label class="toggle"><input type="checkbox" id="cfg-auto-scrape" ${config.auto_scrape?'checked':''} onchange="settingsCache.auto_scrape=this.checked"><span class="toggle-slider"></span></label>
+    </div>
+    <div class="setting-row">
+      <div><div class="setting-label">Intervalle de scraping</div><div class="setting-desc">Minutes entre chaque scrape</div></div>
+      <input type="number" id="cfg-interval" value="${config.scrape_interval_minutes}" min="5" max="120" onchange="settingsCache.scrape_interval_minutes=parseInt(this.value)">
+    </div>
+    <div class="setting-row">
+      <div><div class="setting-label">Export CSV automatique</div><div class="setting-desc">Exporter après chaque scrape</div></div>
+      <label class="toggle"><input type="checkbox" id="cfg-export" ${config.auto_export_csv?'checked':''} onchange="settingsCache.auto_export_csv=this.checked"><span class="toggle-slider"></span></label>
+    </div>
+    <div class="setting-row">
+      <div><div class="setting-label">Notifications</div><div class="setting-desc">Activer les notifications</div></div>
+      <label class="toggle"><input type="checkbox" id="cfg-notif" ${config.notifications_enabled?'checked':''} onchange="settingsCache.notifications_enabled=this.checked"><span class="toggle-slider"></span></label>
+    </div>
+    <div class="setting-row">
+      <div><div class="setting-label">Lancer au démarrage</div><div class="setting-desc">Démarrer automatiquement avec Windows</div></div>
+      <label class="toggle"><input type="checkbox" id="cfg-startup" ${config.launch_at_startup?'checked':''} onchange="settingsCache.launch_at_startup=this.checked"><span class="toggle-slider"></span></label>
+    </div>
+  `;
+
+  document.getElementById('appInfo').innerHTML = `
+    <strong>${status.app}</strong> v${status.version}<br>
+    Entrées : ${status.entries_count}<br>
+    Répertoire : <code style="font-family:var(--mono);font-size:12px;color:var(--accent)">${status.data_dir || '-'}</code>
+  `;
+}
+
+async function saveSettings() {
+  await api('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settingsCache),
+  });
+  loadedTabs = {};
+  loadTab('overview');
+  loadTab('settings');
+}
+
+// ============================================================
+// Actions
+// ============================================================
+async function triggerScrape(btn) {
+  btn.textContent = 'Scraping...';
+  btn.disabled = true;
+  try {
+    const r = await api('/api/scrape', { method: 'POST' });
+    btn.textContent = r.success ? 'OK !' : 'Echec';
+    if (r.success) {
+      loadedTabs['history'] = false;
+      loadedTabs['overview'] = false;
+    }
+  } catch (e) {
+    btn.textContent = 'Erreur';
+  }
+  setTimeout(() => { btn.textContent = 'Scraper maintenant'; btn.disabled = false; }, 2000);
+}
+
+async function importCSV() {
+  const file = document.getElementById('csvFile').files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const r = await api('/api/import/csv', { method: 'POST', body: form });
+    alert(r.imported + ' entrées importées');
+    loadedTabs = {};
+    loadTab('history');
+  } catch (e) {
+    alert('Erreur d\'import');
+  }
+}
+
+async function clearData() {
+  await api('/api/clear', { method: 'POST' });
+  loadedTabs = {};
+  loadTab('overview');
+}
+
+async function deleteEntry(id, btn) {
+  btn.disabled = true;
+  await api('/api/entry/' + id, { method: 'DELETE' });
+  const row = btn.closest('tr');
+  if (row) row.remove();
+}
+
+// ============================================================
+// Utils
+// ============================================================
+function timeSince(date) {
+  const s = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (s < 60) return 'à l\'instant';
+  if (s < 3600) return Math.floor(s/60) + ' min';
+  if (s < 86400) return Math.floor(s/3600) + ' h';
+  return Math.floor(s/86400) + ' j';
+}
+
+// ============================================================
+// Init
+// ============================================================
+(function init() {
+  const hash = location.hash.replace('#', '') || 'overview';
+  const validTabs = ['overview', 'history', 'cycles', 'settings'];
+  const tab = validTabs.includes(hash) ? hash : 'overview';
+
+  // Load overview + settings eagerly
+  loadTab('overview');
+  loadTab('settings');
+
+  // If hash points to another tab, also load it
+  if (tab !== 'overview' && tab !== 'settings') {
+    switchTab(tab);
+  } else if (tab === 'settings') {
+    switchTab('settings');
+  }
+})();
+</script>
+</body>
+</html>
