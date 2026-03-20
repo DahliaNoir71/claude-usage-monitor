@@ -329,8 +329,22 @@ select, input[type="number"] {
     </div>
 
     <div class="table-section">
-      <div class="chart-header"><div class="chart-title">Données</div></div>
+      <div class="chart-header" style="flex-wrap:wrap;gap:8px">
+        <div class="chart-title">Données</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <select id="historyMonthFilter" onchange="applyHistoryFilter()" style="font-family:var(--font);font-size:12px;background:var(--bg-surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px">
+            <option value="">Tous les mois</option>
+          </select>
+          <select id="historyPageSize" onchange="historyPageSize=parseInt(this.value);historyPage=1;renderEntriesPage()" style="font-family:var(--font);font-size:12px;background:var(--bg-surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px">
+            <option value="30">30 / page</option>
+            <option value="50" selected>50 / page</option>
+            <option value="100">100 / page</option>
+            <option value="0">Tout</option>
+          </select>
+        </div>
+      </div>
       <div class="table-box" id="entriesTable"></div>
+      <div id="historyPagination" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;font-size:13px;color:var(--text-muted)"></div>
     </div>
   </div>
 
@@ -664,13 +678,44 @@ function renderHistoryChart(entries) {
   });
 }
 
+let allEntries = [];
+let filteredEntries = [];
+let historyPage = 1;
+let historyPageSize = 50;
+
 function renderEntriesTable(entries) {
-  const recent = entries.slice(-50).reverse();
-  if (!recent.length) {
-    document.getElementById('entriesTable').innerHTML = '<p style="padding:16px;color:var(--text-dim)">Aucune entrée</p>';
+  allEntries = entries.slice().reverse();  // newest first
+  // Populate month filter
+  const months = [...new Set(allEntries.map(e => e.timestamp.slice(0, 7)))].sort().reverse();
+  const sel = document.getElementById('historyMonthFilter');
+  sel.innerHTML = '<option value="">Tous les mois</option>' + months.map(m => `<option value="${m}">${m}</option>`).join('');
+  historyPage = 1;
+  applyHistoryFilter();
+}
+
+function applyHistoryFilter() {
+  const monthFilter = document.getElementById('historyMonthFilter').value;
+  filteredEntries = monthFilter ? allEntries.filter(e => e.timestamp.startsWith(monthFilter)) : allEntries;
+  historyPage = 1;
+  renderEntriesPage();
+}
+
+function renderEntriesPage() {
+  const container = document.getElementById('entriesTable');
+  if (!filteredEntries.length) {
+    container.innerHTML = '<p style="padding:16px;color:var(--text-dim)">Aucune entrée</p>';
+    document.getElementById('historyPagination').innerHTML = '';
     return;
   }
-  const rows = recent.map(e => {
+
+  const total = filteredEntries.length;
+  const pageSize = historyPageSize || total;
+  const totalPages = pageSize > 0 ? Math.ceil(total / pageSize) : 1;
+  historyPage = Math.min(historyPage, totalPages);
+  const start = (historyPage - 1) * pageSize;
+  const page = pageSize > 0 ? filteredEntries.slice(start, start + pageSize) : filteredEntries;
+
+  const rows = page.map(e => {
     const d = new Date(e.timestamp);
     return `<tr>
       <td>${d.toLocaleDateString('fr')}</td>
@@ -683,11 +728,29 @@ function renderEntriesTable(entries) {
       <td><button class="btn-delete" onclick="deleteEntry(${e.id}, this)" title="Supprimer">&#10005;</button></td>
     </tr>`;
   }).join('');
-  document.getElementById('entriesTable').innerHTML = `
+  container.innerHTML = `
     <table>
       <thead><tr><th>Date</th><th>Heure</th><th>All Models</th><th>Sonnet</th><th>Reset All</th><th>Reset Sonnet</th><th>Source</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
+
+  // Pagination controls
+  const pagEl = document.getElementById('historyPagination');
+  if (totalPages <= 1) {
+    pagEl.innerHTML = `<span>${total} entrées</span>`;
+    return;
+  }
+  let pagHtml = `<button class="btn" onclick="historyPage=Math.max(1,historyPage-1);renderEntriesPage()" ${historyPage<=1?'disabled':''}>&#8592; Préc.</button>`;
+  const maxButtons = 5;
+  let pStart = Math.max(1, historyPage - Math.floor(maxButtons / 2));
+  let pEnd = Math.min(totalPages, pStart + maxButtons - 1);
+  pStart = Math.max(1, pEnd - maxButtons + 1);
+  for (let p = pStart; p <= pEnd; p++) {
+    pagHtml += `<button class="btn${p===historyPage?' btn-accent':''}" onclick="historyPage=${p};renderEntriesPage()" style="min-width:32px">${p}</button>`;
+  }
+  pagHtml += `<button class="btn" onclick="historyPage=Math.min(${totalPages},historyPage+1);renderEntriesPage()" ${historyPage>=totalPages?'disabled':''}>Suiv. &#8594;</button>`;
+  pagHtml += `<span style="margin-left:8px">Page ${historyPage}/${totalPages} — ${total} entrées</span>`;
+  pagEl.innerHTML = pagHtml;
 }
 
 // ============================================================
