@@ -1,11 +1,24 @@
 <div class="page-title">Paramètres</div>
+
+<!-- Web scraping settings -->
 <div class="settings-panel">
-  <div class="settings-title">Configuration</div>
+  <div class="settings-title">Configuration Web</div>
   <div id="settingsForm"></div>
   <div style="margin-top:16px;text-align:right">
     <button class="btn btn-accent" onclick="saveSettings()">Sauvegarder</button>
   </div>
 </div>
+
+<!-- Claude Code settings -->
+<div class="settings-panel">
+  <div class="settings-title">Configuration Claude Code</div>
+  <div id="claudeCodeSettingsForm"></div>
+  <div style="margin-top:16px;text-align:right">
+    <button class="btn btn-accent" onclick="saveClaudeCodeSettings()">Sauvegarder</button>
+  </div>
+</div>
+
+<!-- App info -->
 <div class="settings-panel">
   <div class="settings-title">Informations</div>
   <div class="info-block" id="appInfo">Chargement...</div>
@@ -13,4 +26,5 @@
 
 <script>
 loadSettings();
+loadClaudeCodeSettings();
 </script>

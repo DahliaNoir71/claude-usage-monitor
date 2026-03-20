@@ -769,6 +769,55 @@ async function saveSettings() {
 }
 
 // ============================================================
+// CLAUDE CODE SETTINGS
+// ============================================================
+let claudeCodeSettingsCache = {};
+
+async function loadClaudeCodeSettings() {
+  try {
+    const config = await api('/api/config');
+    claudeCodeSettingsCache = {
+      claude_code_scan_enabled: config.claude_code_scan_enabled || false,
+      claude_code_dir: config.claude_code_dir || '',
+      claude_code_scan_interval_minutes: config.claude_code_scan_interval_minutes || 15,
+    };
+
+    const form = document.getElementById('claudeCodeSettingsForm');
+    form.innerHTML = `
+      <div class="setting-row">
+        <div><div class="setting-label">Activer le scan Claude Code</div><div class="setting-desc">Analyser les sessions locales du répertoire ~/.claude/</div></div>
+        <label class="toggle"><input type="checkbox" id="cfg-cc-enabled" ${claudeCodeSettingsCache.claude_code_scan_enabled?'checked':''} onchange="claudeCodeSettingsCache.claude_code_scan_enabled=this.checked"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Répertoire Claude Code</div><div class="setting-desc">Chemin personnalisé (laisser vide = ~/.claude/)</div></div>
+        <input type="text" id="cfg-cc-dir" value="${claudeCodeSettingsCache.claude_code_dir}" placeholder="~/.claude/" onchange="claudeCodeSettingsCache.claude_code_dir=this.value">
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Intervalle de scan</div><div class="setting-desc">Minutes entre chaque scan Claude Code</div></div>
+        <input type="number" id="cfg-cc-interval" value="${claudeCodeSettingsCache.claude_code_scan_interval_minutes}" min="5" max="1440" onchange="claudeCodeSettingsCache.claude_code_scan_interval_minutes=parseInt(this.value)">
+      </div>
+    `;
+  } catch (error) {
+    console.error('Error loading Claude Code settings:', error);
+    document.getElementById('claudeCodeSettingsForm').innerHTML = '<p style="color:var(--red)">Erreur lors du chargement des paramètres</p>';
+  }
+}
+
+async function saveClaudeCodeSettings() {
+  try {
+    await api('/api/config/claude-code', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(claudeCodeSettingsCache),
+    });
+    loadClaudeCodeSettings();
+  } catch (error) {
+    console.error('Error saving Claude Code settings:', error);
+    alert('Erreur lors de la sauvegarde des paramètres Claude Code');
+  }
+}
+
+// ============================================================
 // CLAUDE CODE
 // ============================================================
 async function loadClaudeCodeData() {
