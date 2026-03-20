@@ -133,8 +133,16 @@ body {
 .chart-subtitle { font-size: 12px; color: var(--text-dim); }
 .chart-box {
   background: var(--bg-card); border-radius: var(--radius-lg);
-  border: 1px solid var(--border); padding: 20px;
+  border: 1px solid var(--border); padding: 20px; position: relative;
 }
+.btn-export-png {
+  position: absolute; top: 8px; right: 8px; z-index: 10;
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text-dim); cursor: pointer; font-size: 14px; padding: 4px 8px;
+  opacity: 0; transition: opacity 0.15s;
+}
+.chart-box:hover .btn-export-png { opacity: 1; }
+.btn-export-png:hover { color: var(--text); border-color: var(--border-hover); }
 .chart-wrap { position: relative; width: 100%; }
 .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
 
@@ -489,6 +497,33 @@ const baseOpts = {
 
 function kill(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
 
+function exportChartPNG(chartId) {
+  const chart = charts[chartId];
+  if (!chart) return;
+  const url = chart.toBase64Image('image/png', 1);
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'claude-monitor_' + chartId.replace('Chart', '') + '_' + date + '.png';
+  a.click();
+}
+
+// Add export buttons to all chart boxes after charts render
+function addExportButtons() {
+  document.querySelectorAll('.chart-box').forEach(box => {
+    if (box.querySelector('.btn-export-png')) return;
+    const canvas = box.querySelector('canvas');
+    if (!canvas) return;
+    const btn = document.createElement('button');
+    btn.className = 'btn-export-png';
+    btn.title = 'Exporter en PNG';
+    btn.innerHTML = '&#128247;';
+    btn.onclick = () => exportChartPNG(canvas.id);
+    box.appendChild(btn);
+  });
+}
+// Re-run after each tab load
+
 // ============================================================
 // Tab navigation
 // ============================================================
@@ -509,6 +544,7 @@ async function loadTab(name) {
     else if (name === 'plans') await loadPlans();
     else if (name === 'settings') await loadSettings();
     loadedTabs[name] = true;
+    setTimeout(addExportButtons, 100);
   } catch (e) {
     console.error('Tab load error:', name, e);
   }
