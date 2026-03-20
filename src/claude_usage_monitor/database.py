@@ -12,7 +12,7 @@ from .config import DB_PATH, EXPORT_DIR
 
 logger = logging.getLogger("monitor.database")
 
-SCHEMA_VERSION = "2.1"
+SCHEMA_VERSION = "2.2"
 
 
 @contextmanager
@@ -71,6 +71,48 @@ def init_db():
             )
         """)
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS claude_code_sessions (
+                session_id TEXT PRIMARY KEY,
+                project_path TEXT,
+                start_time TEXT NOT NULL,
+                end_time TEXT,
+                duration_minutes INTEGER,
+                total_input_tokens INTEGER DEFAULT 0,
+                total_output_tokens INTEGER DEFAULT 0,
+                total_cache_read_tokens INTEGER DEFAULT 0,
+                total_cache_creation_tokens INTEGER DEFAULT 0,
+                total_tokens INTEGER DEFAULT 0,
+                cost_usd REAL DEFAULT 0,
+                message_count INTEGER DEFAULT 0,
+                tool_call_count INTEGER DEFAULT 0,
+                primary_model TEXT,
+                source_file TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cc_start_time ON claude_code_sessions(start_time)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cc_project ON claude_code_sessions(project_path)"
+        )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS claude_code_daily (
+                date TEXT PRIMARY KEY,
+                sessions_count INTEGER DEFAULT 0,
+                total_tokens INTEGER DEFAULT 0,
+                input_tokens INTEGER DEFAULT 0,
+                output_tokens INTEGER DEFAULT 0,
+                cost_usd REAL DEFAULT 0,
+                opus_tokens INTEGER DEFAULT 0,
+                sonnet_tokens INTEGER DEFAULT 0,
+                haiku_tokens INTEGER DEFAULT 0,
+                tool_calls INTEGER DEFAULT 0,
+                active_projects INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS schema_info (
                 key TEXT PRIMARY KEY,
                 value TEXT
@@ -98,6 +140,7 @@ def _set_schema_version(conn, version: str):
 
 MIGRATIONS = {
     "2.0": ("2.1", "_migrate_2_0_to_2_1"),
+    "2.1": ("2.2", "_migrate_2_1_to_2_2"),
 }
 
 
@@ -161,6 +204,50 @@ def _migrate_2_0_to_2_1(conn):
             stats["last_entry"],
         ))
     logger.info(f"Populated monthly_summaries for {len(rows)} months")
+
+
+def _migrate_2_1_to_2_2(conn):
+    """Create tables for Claude Code integration."""
+    logger.info("Creating Claude Code tables...")
+    # Tables already created in init_db(), so this is a no-op
+    # Just ensure they exist
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS claude_code_sessions (
+            session_id TEXT PRIMARY KEY,
+            project_path TEXT,
+            start_time TEXT NOT NULL,
+            end_time TEXT,
+            duration_minutes INTEGER,
+            total_input_tokens INTEGER DEFAULT 0,
+            total_output_tokens INTEGER DEFAULT 0,
+            total_cache_read_tokens INTEGER DEFAULT 0,
+            total_cache_creation_tokens INTEGER DEFAULT 0,
+            total_tokens INTEGER DEFAULT 0,
+            cost_usd REAL DEFAULT 0,
+            message_count INTEGER DEFAULT 0,
+            tool_call_count INTEGER DEFAULT 0,
+            primary_model TEXT,
+            source_file TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS claude_code_daily (
+            date TEXT PRIMARY KEY,
+            sessions_count INTEGER DEFAULT 0,
+            total_tokens INTEGER DEFAULT 0,
+            input_tokens INTEGER DEFAULT 0,
+            output_tokens INTEGER DEFAULT 0,
+            cost_usd REAL DEFAULT 0,
+            opus_tokens INTEGER DEFAULT 0,
+            sonnet_tokens INTEGER DEFAULT 0,
+            haiku_tokens INTEGER DEFAULT 0,
+            tool_calls INTEGER DEFAULT 0,
+            active_projects INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    logger.info("Claude Code tables created/verified")
 
 
 def add_entry(
@@ -458,3 +545,84 @@ def import_csv(filepath: str, date_format: str = "%d/%m/%Y") -> int:
                 print(f"Skipping row: {e}")
                 continue
     return count
+
+
+# Claude Code session functions
+def upsert_claude_code_session(session: dict) -> None:
+    """Insert or update a Claude Code session."""
+    with get_db() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO claude_code_sessions
+               (session_id, project_path, start_time, end_time, duration_minutes,
+                total_input_tokens, total_output_tokens, total_cache_read_tokens,
+                total_cache_creation_tokens, total_tokens, cost_usd, message_count,
+                tool_call_count, primary_model, source_file)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                session.get("session_id"),
+                session.get("project_path"),
+                session.get("start_time"),
+                session.get("end_time"),
+                session.get("duration_minutes"),
+                session.get("total_input_tokens", 0),
+                session.get("total_output_tokens", 0),
+                session.get("total_cache_read_tokens", 0),
+                session.get("total_cache_creation_tokens", 0),
+                session.get("total_tokens", 0),
+                session.get("cost_usd", 0),
+                session.get("message_count", 0),
+                session.get("tool_call_count", 0),
+                session.get("primary_model"),
+                session.get("source_file"),
+            ),
+        )
+
+
+def get_claude_code_sessions(days: int = 90, project: str | None = None) -> list[dict]:
+    """Get Claude Code sessions, optionally filtered by project."""
+    with get_db() as conn:
+        since = (datetime.now() - timedelta(days=days)).isoformat()
+        query = "SELECT * FROM claude_code_sessions WHERE start_time >= ?"
+        params = [since]
+
+        if project:
+            query += " AND project_path = ?"
+            params.append(project)
+
+        query += " ORDER BY start_time DESC"
+        rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_claude_code_daily(days: int = 90) -> list[dict]:
+    """Get daily Claude Code aggregates."""
+    with get_db() as conn:
+        since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        rows = conn.execute(
+            "SELECT * FROM claude_code_daily WHERE date >= ? ORDER BY date ASC",
+            (since,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_claude_code_monthly(months: int = 6) -> list[dict]:
+    """Get monthly Claude Code aggregates."""
+    with get_db() as conn:
+        since = (datetime.now() - timedelta(days=months * 31)).strftime("%Y-%m")
+        rows = conn.execute(
+            """SELECT
+                strftime('%Y-%m', date) as month,
+                SUM(sessions_count) as sessions,
+                SUM(total_tokens) as total_tokens,
+                SUM(cost_usd) as cost_usd,
+                SUM(opus_tokens) as opus_tokens,
+                SUM(sonnet_tokens) as sonnet_tokens,
+                SUM(haiku_tokens) as haiku_tokens,
+                COUNT(DISTINCT date) as active_days
+            FROM claude_code_daily
+            WHERE date >= ?
+            GROUP BY strftime('%Y-%m', date)
+            ORDER BY month ASC""",
+            (since,),
+        ).fetchall()
+        return [dict(r) for r in rows]

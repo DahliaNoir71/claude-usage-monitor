@@ -55,6 +55,29 @@ PLAYWRIGHT_HEADLESS = True
 # Browser profile
 CHROME_USER_DATA_DIR = None
 
+# Model pricing (USD per 1M tokens)
+# Updated 2026-03-20 - verify against https://www.anthropic.com/pricing
+MODEL_PRICING = {
+    "claude-opus-4": {
+        "input": 5.0,
+        "output": 25.0,
+        "cache_read": 0.50,
+        "cache_creation": 6.25,
+    },
+    "claude-sonnet-4": {
+        "input": 3.0,
+        "output": 15.0,
+        "cache_read": 0.30,
+        "cache_creation": 3.75,
+    },
+    "claude-haiku-4.5": {
+        "input": 0.80,
+        "output": 4.0,
+        "cache_read": 0.08,
+        "cache_creation": 1.0,
+    },
+}
+
 # Plans
 PLANS = {
     "free": {
@@ -88,6 +111,9 @@ DEFAULT_CONFIG = {
     "chrome_user_data_dir": None,
     "chrome_profile": "Default",
     "launch_at_startup": False,
+    "claude_code_scan_enabled": True,
+    "claude_code_dir": None,  # Auto-detect if None
+    "claude_code_scan_interval_minutes": 30,
 }
 
 
