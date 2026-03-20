@@ -268,6 +268,9 @@ select, input[type="number"] {
     <button class="sidebar-link" data-tab="cycles" onclick="switchTab('cycles')">
       <span class="sidebar-icon">&#8634;</span><span>Cycles</span>
     </button>
+    <button class="sidebar-link" data-tab="claude-code" onclick="switchTab('claude-code')">
+      <span class="sidebar-icon">💻</span><span>Claude Code</span>
+    </button>
     <button class="sidebar-link" data-tab="plans" onclick="switchTab('plans')">
       <span class="sidebar-icon">&#9878;</span><span>Plans</span>
     </button>
@@ -426,6 +429,65 @@ select, input[type="number"] {
     </div>
   </div>
 
+  <!-- CLAUDE CODE -->
+  <div class="section" id="tab-claude-code">
+    <div class="page-title">Claude Code</div>
+
+    <!-- KPI Cards -->
+    <div id="claudeCodeCards" class="cards"></div>
+
+    <!-- Daily usage chart -->
+    <div class="chart-section">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">Usage quotidien</div>
+          <div class="chart-subtitle">Tokens par jour (derniers 30 jours)</div>
+        </div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-wrap" style="height:280px"><canvas id="claudeCodeDailyChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Model split chart -->
+    <div class="chart-row">
+      <div class="chart-section">
+        <div class="chart-header">
+          <div>
+            <div class="chart-title">Répartition par modèle</div>
+            <div class="chart-subtitle">Tokens ce mois (Opus / Sonnet / Haiku)</div>
+          </div>
+        </div>
+        <div class="chart-box">
+          <div class="chart-wrap" style="height:260px"><canvas id="claudeCodeModelChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Projects summary -->
+      <div class="chart-section">
+        <div class="chart-header">
+          <div>
+            <div class="chart-title">Top projets</div>
+            <div class="chart-subtitle">Consommation par projet</div>
+          </div>
+        </div>
+        <div class="chart-box">
+          <div style="padding:12px">
+            <div id="claudeCodeProjectsList" style="font-size:13px;color:var(--text-muted)">
+              <div class="loading"><div class="loading-spinner"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sessions table -->
+    <div class="table-section">
+      <div class="chart-header"><div class="chart-title">Sessions récentes</div></div>
+      <div class="table-box" id="claudeCodeSessionsTable"></div>
+    </div>
+  </div>
+
   <!-- SETTINGS -->
   <div class="section" id="tab-settings">
     <div class="page-title">Paramètres</div>
@@ -444,6 +506,7 @@ select, input[type="number"] {
 
 </div>
 
+<script src="modules.js"></script>
 <script>
 // ============================================================
 // API helper
@@ -541,6 +604,7 @@ async function loadTab(name) {
     if (name === 'overview') await loadOverview();
     else if (name === 'history') await loadHistory();
     else if (name === 'cycles') await loadCycles();
+    else if (name === 'claude-code') await loadClaudeCodeData();
     else if (name === 'plans') await loadPlans();
     else if (name === 'settings') await loadSettings();
     loadedTabs[name] = true;

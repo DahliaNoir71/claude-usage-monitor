@@ -1,0 +1,59 @@
+<div class="section active" id="tab-overview">
+  <div class="page-title">Vue d'ensemble</div>
+  <div id="overviewCards" class="cards"></div>
+  <div id="overviewReco"></div>
+
+  <div class="chart-row">
+    <div class="chart-section">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">Vélocité quotidienne</div>
+          <div class="chart-subtitle">Min / Max All Models % par jour</div>
+        </div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-wrap" style="height:260px"><canvas id="velocityChart"></canvas></div>
+      </div>
+    </div>
+    <div class="chart-section">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">Distribution horaire</div>
+          <div class="chart-subtitle">Nombre de mesures par heure</div>
+        </div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-wrap" style="height:260px"><canvas id="hourlyChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEW: Split web/Claude Code consumption -->
+  <div class="chart-section">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Répartition de l'usage</div>
+        <div class="chart-subtitle">Web vs Claude Code</div>
+      </div>
+    </div>
+    <div class="chart-box">
+      <div class="chart-wrap" style="height:80px"><canvas id="splitChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- NEW: API equivalent cost -->
+  <div class="chart-section">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Coût API équivalent</div>
+        <div class="chart-subtitle">Si tu utilisais l'API au lieu de l'abonnement</div>
+      </div>
+    </div>
+    <div id="apiCostCard" class="card" style="padding: 24px;">
+      <div class="loading">
+        <div class="loading-spinner"></div>
+        <p>Chargement...</p>
+      </div>
+    </div>
+  </div>
+</div>
