@@ -51,6 +51,20 @@ def init_db():
                 last_entry_time TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS monthly_summaries (
+                month TEXT PRIMARY KEY,
+                max_all_models INTEGER,
+                avg_all_models REAL,
+                max_sonnet INTEGER,
+                avg_sonnet REAL,
+                rate_limit_days INTEGER,
+                total_entries INTEGER,
+                active_days INTEGER,
+                first_entry TEXT,
+                last_entry TEXT
+            )
+        """)
 
 
 def add_entry(
@@ -71,6 +85,7 @@ def add_entry(
             (timestamp, all_models_pct, sonnet_pct, reset_all_models, reset_sonnet, source),
         )
         _update_daily_summary(conn, timestamp, all_models_pct, sonnet_pct)
+        _update_monthly_summary(conn, timestamp)
         return cursor.lastrowid
 
 
@@ -100,6 +115,86 @@ def _update_daily_summary(conn, timestamp: str, all_models: int, sonnet: int):
                VALUES (?, ?, ?, ?, 0, 1, ?, ?)""",
             (date_str, all_models, sonnet, all_models, timestamp, timestamp),
         )
+
+
+def _update_monthly_summary(conn, timestamp: str):
+    """Recompute monthly summary for the month of the given timestamp."""
+    month_str = timestamp[:7]  # YYYY-MM
+    row = conn.execute(
+        """SELECT
+            MAX(all_models_pct) as max_all_models,
+            AVG(all_models_pct) as avg_all_models,
+            MAX(sonnet_pct) as max_sonnet,
+            AVG(sonnet_pct) as avg_sonnet,
+            COUNT(*) as total_entries,
+            COUNT(DISTINCT date(timestamp)) as active_days,
+            MIN(timestamp) as first_entry,
+            MAX(timestamp) as last_entry
+        FROM usage_entries
+        WHERE strftime('%Y-%m', timestamp) = ?""",
+        (month_str,),
+    ).fetchone()
+
+    if not row or row["total_entries"] == 0:
+        return
+
+    # Count rate-limit days (days where any measurement > 80%)
+    rate_limit_days = conn.execute(
+        """SELECT COUNT(DISTINCT date(timestamp))
+        FROM usage_entries
+        WHERE strftime('%Y-%m', timestamp) = ? AND all_models_pct > 80""",
+        (month_str,),
+    ).fetchone()[0]
+
+    conn.execute(
+        """INSERT OR REPLACE INTO monthly_summaries
+           (month, max_all_models, avg_all_models, max_sonnet, avg_sonnet,
+            rate_limit_days, total_entries, active_days, first_entry, last_entry)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            month_str,
+            row["max_all_models"],
+            round(row["avg_all_models"], 1) if row["avg_all_models"] else 0,
+            row["max_sonnet"],
+            round(row["avg_sonnet"], 1) if row["avg_sonnet"] else 0,
+            rate_limit_days,
+            row["total_entries"],
+            row["active_days"],
+            row["first_entry"],
+            row["last_entry"],
+        ),
+    )
+
+
+def get_monthly_summaries(months: int = 6) -> list[dict]:
+    with get_db() as conn:
+        since = (datetime.now() - timedelta(days=months * 31)).strftime("%Y-%m")
+        rows = conn.execute(
+            "SELECT * FROM monthly_summaries WHERE month >= ? ORDER BY month ASC",
+            (since,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_monthly_peaks(months: int = 6) -> list[dict]:
+    with get_db() as conn:
+        since = (datetime.now() - timedelta(days=months * 31)).isoformat()
+        rows = conn.execute(
+            """SELECT
+                strftime('%Y-%m', timestamp) as month,
+                MAX(all_models_pct) as max_all_models,
+                AVG(all_models_pct) as avg_all_models,
+                MAX(sonnet_pct) as max_sonnet,
+                AVG(sonnet_pct) as avg_sonnet,
+                COUNT(DISTINCT date(timestamp)) as active_days,
+                COUNT(*) as entries_count
+            FROM usage_entries
+            WHERE timestamp >= ?
+            GROUP BY month
+            ORDER BY month ASC""",
+            (since,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_entries(days: int | None = None, limit: int | None = None) -> list[dict]:
@@ -208,6 +303,7 @@ def clear_all():
     with get_db() as conn:
         conn.execute("DELETE FROM usage_entries")
         conn.execute("DELETE FROM daily_summaries")
+        conn.execute("DELETE FROM monthly_summaries")
 
 
 def entry_count() -> int:

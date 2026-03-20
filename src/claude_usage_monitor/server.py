@@ -83,6 +83,11 @@ async def get_weekly(weeks: int = 12):
     return db.get_weekly_peaks(weeks=weeks)
 
 
+@app.get("/api/monthly")
+async def get_monthly(months: int = 6):
+    return db.get_monthly_peaks(months=months)
+
+
 @app.get("/api/sonnet-cycles")
 async def get_sonnet_cycles():
     return db.get_sonnet_cycles()
