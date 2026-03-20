@@ -342,3 +342,110 @@ async def trigger_claude_code_scan():
     except Exception as e:
         logger.error(f"Claude Code scan failed: {e}")
         raise HTTPException(500, f"Scan failed: {e}")
+
+
+# ── Phase 4: Reports ────────────────────────────────────────────────────────
+
+@app.get("/api/report/monthly")
+async def monthly_report(month: str | None = None):
+    """Generate comprehensive monthly report (web + Claude Code)."""
+    from datetime import datetime
+
+    if not month:
+        month = datetime.now().strftime("%Y-%m")
+
+    config = load_config()
+    plan_price = PLANS.get(config["plan"], {}).get("price", 0)
+
+    # Get web and Claude Code usage
+    web_data = _get_monthly_web_usage(month)
+    cc_data = _get_monthly_claude_code_usage(month)
+    total_cost = cc_data["cost"] if cc_data else 0
+
+    # Determine recommendation
+    recommendation = _evaluate_plan_value(total_cost, plan_price)
+
+    return {
+        "month": month,
+        "plan": config["plan"],
+        "plan_price": plan_price,
+        "web_usage": web_data,
+        "claude_code_usage": cc_data["usage"] if cc_data else {},
+        "combined": {
+            "total_cost_equivalent": round(total_cost, 2),
+            "plan_value_ratio": round(total_cost / plan_price, 2) if plan_price > 0 else 0,
+            "recommendation": recommendation,
+        },
+    }
+
+
+def _get_monthly_web_usage(month: str) -> dict:
+    """Extract web usage for a specific month."""
+    web_monthly = db.get_monthly_peaks(months=12)
+    web_data = next((m for m in web_monthly if m.get("month") == month), None)
+    if not web_data:
+        return {}
+    return {
+        "max_all_models_pct": web_data.get("max_all_models", 0),
+        "avg_all_models_pct": web_data.get("avg_all_models", 0),
+        "max_sonnet_pct": web_data.get("max_sonnet", 0),
+        "avg_sonnet_pct": web_data.get("avg_sonnet", 0),
+        "rate_limit_days": web_data.get("rate_limit_days", 0),
+    }
+
+
+def _get_monthly_claude_code_usage(month: str) -> dict | None:
+    """Extract Claude Code usage for a specific month."""
+    cc_monthly = db.get_claude_code_monthly(months=12)
+    cc_data = next((m for m in cc_monthly if m.get("month") == month), None)
+    if not cc_data:
+        return None
+    return {
+        "cost": cc_data.get("cost_usd", 0),
+        "usage": {
+            "sessions": cc_data.get("sessions", 0),
+            "total_tokens": cc_data.get("total_tokens", 0),
+            "cost_equivalent_usd": cc_data.get("cost_usd", 0),
+            "active_days": cc_data.get("active_days", 0),
+            "by_model": {
+                "opus_tokens": cc_data.get("opus_tokens", 0),
+                "sonnet_tokens": cc_data.get("sonnet_tokens", 0),
+                "haiku_tokens": cc_data.get("haiku_tokens", 0),
+            },
+        },
+    }
+
+
+def _evaluate_plan_value(total_cost: float, plan_price: float) -> str:
+    """Evaluate if plan is appropriate for the cost."""
+    if total_cost > plan_price * 1.5:
+        return "upgrade"
+    return "maintain" if total_cost <= plan_price else "consider_upgrade"
+
+
+# ── Phase 5: Configuration ──────────────────────────────────────────────────
+
+@app.put("/api/config/claude-code")
+async def update_claude_code_config(update: ConfigUpdate):
+    """Update Claude Code specific configuration."""
+    config = load_config()
+
+    if update.claude_code_scan_enabled is not None:
+        config["claude_code_scan_enabled"] = update.claude_code_scan_enabled
+    if update.claude_code_dir is not None:
+        config["claude_code_dir"] = update.claude_code_dir
+    if update.claude_code_scan_interval_minutes is not None:
+        config["claude_code_scan_interval_minutes"] = update.claude_code_scan_interval_minutes
+
+    save_config(config)
+    return config
+
+
+@app.post("/api/pricing/refresh")
+async def refresh_pricing():
+    """Refresh pricing from configuration (placeholder for future API integration)."""
+    from .config import MODEL_PRICING
+
+    # For now, just return current pricing
+    # In future, could fetch from Anthropic pricing API
+    return {"success": True, "pricing": MODEL_PRICING}
