@@ -494,9 +494,10 @@ async function loadTab(name) {
 // OVERVIEW
 // ============================================================
 async function loadOverview() {
-  const [analysis, status] = await Promise.all([
+  const [analysis, status, cycleStats] = await Promise.all([
     api('/api/analysis'),
     api('/api/status'),
+    api('/api/cycle-stats'),
   ]);
 
   // Cards
@@ -571,8 +572,46 @@ async function loadOverview() {
       <div class="card-value accent">${analysis.days_covered}</div>
       <div class="card-sub">${status.entries_count} entrées</div>
     </div>
+    <div class="card" id="resetCountdownCard" style="display:none">
+      <div class="card-label">Prochain reset estimé</div>
+      <div class="card-value accent" id="resetCountdown" style="font-size:20px">--</div>
+      <div class="card-sub" id="resetCountdownSub"></div>
+    </div>
   `;
   freshEl.after(detailEl);
+
+  // Reset countdown
+  if (cycleStats && cycleStats.has_data && cycleStats.next_reset_estimate) {
+    const card = document.getElementById('resetCountdownCard');
+    card.style.display = '';
+    const resetDate = new Date(cycleStats.next_reset_estimate);
+    const subEl = document.getElementById('resetCountdownSub');
+    if (cycleStats.source === 'scraper') {
+      subEl.textContent = 'Source : données scraper';
+    } else if (cycleStats.median_cycle_hours) {
+      subEl.textContent = 'Basé sur une moyenne de ' + cycleStats.median_cycle_hours + 'h par cycle';
+    }
+    if (!cycleStats.reliable) {
+      subEl.textContent += ' (estimation peu fiable)';
+    }
+    // Start countdown timer
+    function updateCountdown() {
+      const diff = resetDate.getTime() - Date.now();
+      const el = document.getElementById('resetCountdown');
+      if (!el) return;
+      if (diff <= 0) {
+        el.textContent = 'Imminent';
+        el.className = 'card-value green';
+        return;
+      }
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      el.textContent = '~' + (h > 0 ? h + 'h ' : '') + m + 'min ' + s + 's';
+    }
+    updateCountdown();
+    setInterval(updateCountdown, 1000);
+  }
 
   // Recommendation
   renderReco(document.getElementById('overviewReco'), r);

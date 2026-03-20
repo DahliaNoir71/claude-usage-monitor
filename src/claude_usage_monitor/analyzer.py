@@ -2,8 +2,10 @@
 Claude Usage Monitor - Analyzer
 Computes insights and plan recommendations from usage data.
 """
+import re
+import statistics
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .config import PLANS
 
@@ -119,6 +121,89 @@ def _compute_sonnet_cycles(entries: list[dict]) -> list[dict]:
         cycles.append({"start": cycle_start, "end": entries[-1]["timestamp"], "peak": final_peak})
 
     return cycles
+
+
+def _parse_reset_duration(text: str | None) -> timedelta | None:
+    """Parse reset text like '18 h 36 min' or '2h 14min' into a timedelta."""
+    if not text:
+        return None
+    m = re.search(r'(\d+)\s*h\s*(\d+)\s*min', text)
+    if m:
+        return timedelta(hours=int(m.group(1)), minutes=int(m.group(2)))
+    m = re.search(r'(\d+)\s*min', text)
+    if m:
+        return timedelta(minutes=int(m.group(1)))
+    m = re.search(r'(\d+)\s*h', text)
+    if m:
+        return timedelta(hours=int(m.group(1)))
+    return None
+
+
+def compute_cycle_stats(entries: list[dict]) -> dict:
+    """Compute cycle duration stats from reset detections and reset_all_models fields."""
+    # Method 1: Use reset drops (usage going down significantly)
+    cycle_durations = []
+    last_reset_ts = None
+
+    for i in range(1, len(entries)):
+        prev = entries[i - 1].get("all_models_pct", 0) or 0
+        curr = entries[i].get("all_models_pct", 0) or 0
+        if curr < prev - 2:
+            ts = datetime.fromisoformat(entries[i]["timestamp"])
+            if last_reset_ts:
+                duration = (ts - last_reset_ts).total_seconds()
+                if 1800 < duration < 86400:  # between 30min and 24h
+                    cycle_durations.append(duration)
+            last_reset_ts = ts
+
+    # Method 2: Use the latest reset_all_models field for direct countdown
+    latest_reset_text = None
+    latest_reset_td = None
+    latest_ts = None
+    for e in reversed(entries):
+        if e.get("reset_all_models"):
+            latest_reset_text = e["reset_all_models"]
+            latest_reset_td = _parse_reset_duration(latest_reset_text)
+            latest_ts = datetime.fromisoformat(e["timestamp"])
+            break
+
+    result = {
+        "has_data": False,
+        "median_cycle_hours": None,
+        "stddev_hours": None,
+        "cycles_analyzed": len(cycle_durations),
+        "last_reset_timestamp": last_reset_ts.isoformat() if last_reset_ts else None,
+        "next_reset_estimate": None,
+        "reliable": False,
+        "source": None,
+    }
+
+    # If we have a direct reset countdown from scraper, use it
+    if latest_reset_td and latest_ts:
+        reset_at = latest_ts + latest_reset_td
+        result["has_data"] = True
+        result["next_reset_estimate"] = reset_at.isoformat()
+        result["source"] = "scraper"
+        result["reliable"] = True
+
+    # Compute median cycle duration from detected resets
+    if cycle_durations:
+        median_s = statistics.median(cycle_durations)
+        result["has_data"] = True
+        result["median_cycle_hours"] = round(median_s / 3600, 1)
+        result["cycles_analyzed"] = len(cycle_durations)
+        if len(cycle_durations) >= 3:
+            stddev_s = statistics.stdev(cycle_durations)
+            result["stddev_hours"] = round(stddev_s / 3600, 1)
+            result["reliable"] = stddev_s / median_s < 0.3
+
+        # Estimate next reset from median if no scraper data
+        if not result.get("source") and last_reset_ts:
+            next_est = last_reset_ts + timedelta(seconds=median_s)
+            result["next_reset_estimate"] = next_est.isoformat()
+            result["source"] = "estimated"
+
+    return result
 
 
 def _hourly_distribution(entries: list[dict]) -> dict[int, int]:

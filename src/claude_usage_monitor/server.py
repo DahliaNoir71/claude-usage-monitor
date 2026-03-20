@@ -89,6 +89,13 @@ async def get_monthly(months: int = 6):
     return db.get_monthly_peaks(months=months)
 
 
+@app.get("/api/cycle-stats")
+async def get_cycle_stats():
+    from .analyzer import compute_cycle_stats
+    entries = db.get_entries()
+    return compute_cycle_stats(entries)
+
+
 @app.get("/api/sonnet-cycles")
 async def get_sonnet_cycles():
     return db.get_sonnet_cycles()
