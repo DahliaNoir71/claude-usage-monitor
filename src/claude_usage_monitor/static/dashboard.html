@@ -482,14 +482,61 @@ async function loadOverview() {
 
   const latest = analysis.latest;
   const r = analysis.recommendation;
+  const ms = analysis.monthly_stats || [];
+  const currentMonth = ms.length ? ms[ms.length - 1] : null;
+  const prevMonth = ms.length > 1 ? ms[ms.length - 2] : null;
+  const trend = r && r.stats ? r.stats.trend : 'stable';
+  const trendIcon = trend === 'rising' ? '&#8599;' : trend === 'falling' ? '&#8600;' : '&#8594;';
+  const trendLabel = trend === 'rising' ? 'Hausse' : trend === 'falling' ? 'Baisse' : 'Stable';
+
   el.innerHTML = `
     <div class="card">
-      <div class="card-label">All Models</div>
-      <div class="card-value ${pctColor(latest.all_models_pct)}">${latest.all_models_pct}%</div>
-      <div class="card-sub">Max: ${analysis.all_models.max_ever}% &middot; Moy: ${analysis.all_models.avg}%</div>
+      <div class="card-label">Usage ce mois</div>
+      <div class="card-value ${pctColor(currentMonth ? currentMonth.max_all_models : 0)}">${currentMonth ? currentMonth.max_all_models : 0}%</div>
+      <div class="card-sub">Pic All Models &middot; Moy: ${currentMonth ? currentMonth.avg_all_models : 0}%</div>
     </div>
     <div class="card">
-      <div class="card-label">Sonnet</div>
+      <div class="card-label">Mois précédent</div>
+      <div class="card-value ${pctColor(prevMonth ? prevMonth.max_all_models : 0)}">${prevMonth ? prevMonth.max_all_models : '-'}${prevMonth ? '%' : ''}</div>
+      <div class="card-sub">${prevMonth ? 'Pic All Models' : 'Pas de données'}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Jours actifs</div>
+      <div class="card-value accent">${currentMonth ? currentMonth.active_days : 0}</div>
+      <div class="card-sub">${currentMonth ? currentMonth.entries_count : 0} mesures ce mois</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Tendance</div>
+      <div class="card-value" style="font-size:22px">${trendIcon} ${trendLabel}</div>
+      <div class="card-sub">${ms.length} mois analysés</div>
+    </div>
+  `;
+
+  // Freshness indicator
+  const freshEl = document.createElement('div');
+  freshEl.style.cssText = 'font-size:12px;color:var(--text-dim);margin:-16px 0 20px;';
+  if (latest && latest.timestamp) {
+    const ago = timeSince(new Date(latest.timestamp));
+    const msAgo = Date.now() - new Date(latest.timestamp).getTime();
+    const stale = msAgo > 24 * 3600 * 1000;
+    freshEl.style.color = stale ? 'var(--amber)' : 'var(--text-dim)';
+    freshEl.innerHTML = (stale ? '&#9888; ' : '') + 'Dernière mesure : il y a ' + ago;
+    freshEl.title = new Date(latest.timestamp).toLocaleString('fr');
+  }
+  el.after(freshEl);
+
+  // Detail cards (secondary)
+  const detailEl = document.createElement('div');
+  detailEl.className = 'cards';
+  detailEl.style.marginBottom = '24px';
+  detailEl.innerHTML = `
+    <div class="card">
+      <div class="card-label">All Models (actuel)</div>
+      <div class="card-value ${pctColor(latest.all_models_pct)}">${latest.all_models_pct}%</div>
+      <div class="card-sub">Max global: ${analysis.all_models.max_ever}% &middot; Moy: ${analysis.all_models.avg}%</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Sonnet (actuel)</div>
       <div class="card-value ${pctColor(latest.sonnet_pct || 0)}">${latest.sonnet_pct || 0}%</div>
       <div class="card-sub">${latest.reset_sonnet || '-'}</div>
     </div>
@@ -498,12 +545,8 @@ async function loadOverview() {
       <div class="card-value accent">${analysis.days_covered}</div>
       <div class="card-sub">${status.entries_count} entrées</div>
     </div>
-    <div class="card">
-      <div class="card-label">Pic max All Models</div>
-      <div class="card-value ${pctColor(analysis.all_models.max_ever)}">${analysis.all_models.max_ever}%</div>
-      <div class="card-sub">Moyenne: ${analysis.all_models.avg}%</div>
-    </div>
   `;
+  freshEl.after(detailEl);
 
   // Recommendation
   renderReco(document.getElementById('overviewReco'), r);
@@ -520,15 +563,20 @@ function renderReco(container, r) {
   const cls = r.action.includes('downgrade') ? 'downgrade' : r.action === 'upgrade' ? 'upgrade' : 'maintain';
   const icons = { downgrade: '&#128176;', maintain: '&#9989;', upgrade: '&#128200;', consider_downgrade: '&#128161;' };
   const icon = icons[r.action] || '&#128202;';
-  container.innerHTML = `
+  let html = `
     <div class="reco ${cls}">
       <div class="reco-title">${icon} ${r.plan_name} recommandé</div>
       <div class="reco-body">${r.reason}</div>
       ${r.savings_yearly > 0 ? `<div class="reco-body" style="margin-top:4px;font-weight:500">Économie : $${r.savings_monthly}/mois ($${r.savings_yearly}/an)</div>` : ''}
-      ${r.caveats && r.caveats.length ? `<div class="reco-caveats">${r.caveats.join(' ')}</div>` : ''}
       <div class="reco-badge" style="background:var(--bg-surface);color:var(--text-dim)">${r.action.replace('_', ' ')} &middot; confiance ${r.confidence}</div>
-    </div>
-  `;
+    </div>`;
+  if (r.caveats && r.caveats.length) {
+    html += `
+    <div style="padding:12px 16px;border-radius:var(--radius);margin-top:8px;margin-bottom:24px;border:1px solid var(--border);background:var(--bg-card);font-size:12px;color:var(--text-muted);line-height:1.6">
+      ${r.caveats.map(c => '<div style="margin-bottom:4px">&#9432; ' + c + '</div>').join('')}
+    </div>`;
+  }
+  container.innerHTML = html;
 }
 
 function renderVelocityChart(data) {
