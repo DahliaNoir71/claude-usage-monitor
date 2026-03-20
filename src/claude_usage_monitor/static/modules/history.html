@@ -1,0 +1,46 @@
+<div class="page-title">Historique</div>
+<div class="toolbar" id="historyToolbar">
+  <button class="btn btn-accent" onclick="triggerScrape(this)">Scraper maintenant</button>
+  <label class="btn" style="cursor:pointer">
+    Importer CSV
+    <input type="file" id="csvFile" accept=".csv" style="display:none" onchange="importCSV()">
+  </label>
+  <a class="btn" href="/api/export/csv" target="_blank">Exporter CSV</a>
+  <div class="toolbar-spacer"></div>
+  <button class="btn btn-danger" onclick="if(confirm('Supprimer toutes les données ?')) clearData()">Supprimer tout</button>
+</div>
+
+<div class="chart-section">
+  <div class="chart-header">
+    <div>
+      <div class="chart-title">Historique complet</div>
+      <div class="chart-subtitle" id="historyCount"></div>
+    </div>
+  </div>
+  <div class="chart-box">
+    <div class="chart-wrap" style="height:300px"><canvas id="historyChart"></canvas></div>
+  </div>
+</div>
+
+<div class="table-section">
+  <div class="chart-header" style="flex-wrap:wrap;gap:8px">
+    <div class="chart-title">Données</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <select id="historyMonthFilter" onchange="applyHistoryFilter()" style="font-family:var(--font);font-size:12px;background:var(--bg-surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px">
+        <option value="">Tous les mois</option>
+      </select>
+      <select id="historyPageSize" onchange="APP_STATE.historyPageSize=parseInt(this.value);APP_STATE.historyPage=1;renderEntriesPage()" style="font-family:var(--font);font-size:12px;background:var(--bg-surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px">
+        <option value="30">30 / page</option>
+        <option value="50" selected>50 / page</option>
+        <option value="100">100 / page</option>
+        <option value="0">Tout</option>
+      </select>
+    </div>
+  </div>
+  <div class="table-box" id="entriesTable"></div>
+  <div id="historyPagination" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;font-size:13px;color:var(--text-muted)"></div>
+</div>
+
+<script>
+loadHistory();
+</script>

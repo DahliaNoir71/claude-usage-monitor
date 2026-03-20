@@ -66,12 +66,14 @@ const APP = {
 
   destroyCharts() {
     // Destroy all Chart.js instances to prevent memory leaks
-    Object.values(this.charts).forEach(chart => {
-      if (chart && typeof chart.destroy === 'function') {
-        chart.destroy();
-      }
-    });
-    this.charts = {};
+    if (typeof APP_STATE !== 'undefined') {
+      Object.values(APP_STATE.charts).forEach(chart => {
+        if (chart && typeof chart.destroy === 'function') {
+          chart.destroy();
+        }
+      });
+      APP_STATE.charts = {};
+    }
   },
 
   startAutoRefresh() {

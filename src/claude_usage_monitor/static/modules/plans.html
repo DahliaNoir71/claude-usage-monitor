@@ -1,0 +1,20 @@
+<div class="page-title">Comparateur de plans</div>
+<div class="settings-panel" style="padding:0;overflow-x:auto">
+  <table id="plansTable" style="font-size:13px">
+    <thead></thead>
+    <tbody></tbody>
+  </table>
+</div>
+<div class="settings-panel" style="margin-top:16px">
+  <div class="settings-title">Simulateur</div>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <span style="font-size:13px;color:var(--text-muted)">Si mon usage augmentait de</span>
+    <input type="range" id="simSlider" min="0" max="200" value="0" oninput="updateSimulator()" style="flex:1;min-width:120px">
+    <span id="simValue" style="font-size:14px;font-weight:600;color:var(--accent);min-width:40px">+0%</span>
+  </div>
+  <div id="simResult" style="margin-top:12px;font-size:13px;color:var(--text-muted)"></div>
+</div>
+
+<script>
+loadPlans();
+</script>

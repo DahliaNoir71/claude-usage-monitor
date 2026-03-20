@@ -1,0 +1,59 @@
+<div class="page-title">Claude Code</div>
+
+<!-- KPI Cards -->
+<div id="claudeCodeCards" class="cards"></div>
+
+<!-- Daily usage chart -->
+<div class="chart-section">
+  <div class="chart-header">
+    <div>
+      <div class="chart-title">Usage quotidien</div>
+      <div class="chart-subtitle">Tokens par jour (derniers 30 jours)</div>
+    </div>
+  </div>
+  <div class="chart-box">
+    <div class="chart-wrap" style="height:280px"><canvas id="claudeCodeDailyChart"></canvas></div>
+  </div>
+</div>
+
+<!-- Model split chart -->
+<div class="chart-row">
+  <div class="chart-section">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Répartition par modèle</div>
+        <div class="chart-subtitle">Tokens ce mois (Opus / Sonnet / Haiku)</div>
+      </div>
+    </div>
+    <div class="chart-box">
+      <div class="chart-wrap" style="height:260px"><canvas id="claudeCodeModelChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Projects summary -->
+  <div class="chart-section">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">Top projets</div>
+        <div class="chart-subtitle">Consommation par projet</div>
+      </div>
+    </div>
+    <div class="chart-box">
+      <div style="padding:12px">
+        <div id="claudeCodeProjectsList" style="font-size:13px;color:var(--text-muted)">
+          <div class="loading"><div class="loading-spinner"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Sessions table -->
+<div class="table-section">
+  <div class="chart-header"><div class="chart-title">Sessions récentes</div></div>
+  <div class="table-box" id="claudeCodeSessionsTable"></div>
+</div>
+
+<script>
+loadClaudeCodeData();
+</script>

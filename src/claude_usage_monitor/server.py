@@ -48,10 +48,10 @@ class ManualEntry(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
-    index = STATIC_DIR / "dashboard.html"
+    index = STATIC_DIR / "index.html"
     if index.exists():
         return HTMLResponse(index.read_text(encoding="utf-8"))
-    return HTMLResponse("<h1>Dashboard not found. Check static/dashboard.html</h1>")
+    return HTMLResponse("<h1>Dashboard not found. Check static/index.html</h1>")
 
 
 # ── API Routes ──────────────────────────────────────────────────────────────
