@@ -2,12 +2,17 @@
 Claude Usage Monitor - Database (SQLite)
 """
 import csv
+import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from .config import DB_PATH, EXPORT_DIR
+
+logger = logging.getLogger("monitor.database")
+
+SCHEMA_VERSION = "2.1"
 
 
 @contextmanager
@@ -65,6 +70,97 @@ def init_db():
                 last_entry TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS schema_info (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        _run_migrations(conn)
+
+
+def _get_schema_version(conn) -> str:
+    try:
+        row = conn.execute(
+            "SELECT value FROM schema_info WHERE key = 'version'"
+        ).fetchone()
+        return row["value"] if row else "2.0"
+    except sqlite3.OperationalError:
+        return "2.0"
+
+
+def _set_schema_version(conn, version: str):
+    conn.execute(
+        "INSERT OR REPLACE INTO schema_info (key, value) VALUES ('version', ?)",
+        (version,),
+    )
+
+
+MIGRATIONS = {
+    "2.0": ("2.1", "_migrate_2_0_to_2_1"),
+}
+
+
+def _run_migrations(conn):
+    current = _get_schema_version(conn)
+    while current != SCHEMA_VERSION:
+        if current not in MIGRATIONS:
+            logger.warning(f"No migration path from {current} to {SCHEMA_VERSION}")
+            break
+        target, func_name = MIGRATIONS[current]
+        logger.info(f"Running migration {current} → {target}...")
+        globals()[func_name](conn)
+        _set_schema_version(conn, target)
+        logger.info(f"Migration {current} → {target} complete")
+        current = target
+
+
+def _migrate_2_0_to_2_1(conn):
+    """Populate monthly_summaries from existing usage_entries."""
+    rows = conn.execute("""
+        SELECT DISTINCT strftime('%Y-%m', timestamp) as month
+        FROM usage_entries
+    """).fetchall()
+    for row in rows:
+        month = row["month"]
+        stats = conn.execute("""
+            SELECT
+                MAX(all_models_pct) as max_all_models,
+                AVG(all_models_pct) as avg_all_models,
+                MAX(sonnet_pct) as max_sonnet,
+                AVG(sonnet_pct) as avg_sonnet,
+                COUNT(*) as total_entries,
+                COUNT(DISTINCT date(timestamp)) as active_days,
+                MIN(timestamp) as first_entry,
+                MAX(timestamp) as last_entry
+            FROM usage_entries
+            WHERE strftime('%Y-%m', timestamp) = ?
+        """, (month,)).fetchone()
+
+        rate_limit_days = conn.execute("""
+            SELECT COUNT(DISTINCT date(timestamp))
+            FROM usage_entries
+            WHERE strftime('%Y-%m', timestamp) = ? AND all_models_pct > 80
+        """, (month,)).fetchone()[0]
+
+        conn.execute("""
+            INSERT OR REPLACE INTO monthly_summaries
+            (month, max_all_models, avg_all_models, max_sonnet, avg_sonnet,
+             rate_limit_days, total_entries, active_days, first_entry, last_entry)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            month,
+            stats["max_all_models"],
+            round(stats["avg_all_models"], 1) if stats["avg_all_models"] else 0,
+            stats["max_sonnet"],
+            round(stats["avg_sonnet"], 1) if stats["avg_sonnet"] else 0,
+            rate_limit_days,
+            stats["total_entries"],
+            stats["active_days"],
+            stats["first_entry"],
+            stats["last_entry"],
+        ))
+    logger.info(f"Populated monthly_summaries for {len(rows)} months")
 
 
 def add_entry(
