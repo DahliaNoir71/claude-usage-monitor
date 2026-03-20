@@ -12,7 +12,7 @@ from .config import DB_PATH, EXPORT_DIR
 
 logger = logging.getLogger("monitor.database")
 
-SCHEMA_VERSION = "2.2"
+SCHEMA_VERSION = "2.3"
 
 
 @contextmanager
@@ -141,6 +141,7 @@ def _set_schema_version(conn, version: str):
 MIGRATIONS = {
     "2.0": ("2.1", "_migrate_2_0_to_2_1"),
     "2.1": ("2.2", "_migrate_2_1_to_2_2"),
+    "2.2": ("2.3", "_migrate_2_2_to_2_3"),
 }
 
 
@@ -248,6 +249,20 @@ def _migrate_2_1_to_2_2(conn):
         )
     """)
     logger.info("Claude Code tables created/verified")
+
+
+def _migrate_2_2_to_2_3(conn):
+    """Phase 5.4: Add scan index table for optimization."""
+    logger.info("Creating Claude Code scan index table...")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS claude_code_scan_index (
+            session_file_path TEXT PRIMARY KEY,
+            last_modified INTEGER,
+            last_byte_offset INTEGER DEFAULT 0,
+            last_scanned_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    logger.info("Scan index table created")
 
 
 def add_entry(

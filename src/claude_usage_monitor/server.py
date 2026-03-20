@@ -346,6 +346,36 @@ async def trigger_claude_code_scan():
 
 # ── Phase 4: Reports ────────────────────────────────────────────────────────
 
+@app.get("/api/timeline/combined")
+async def combined_timeline(days: int = 90):
+    """Get combined daily usage: web % + Claude Code tokens for timeline visualization."""
+    from datetime import datetime, timedelta
+
+    # Get daily summaries (web usage)
+    daily_web = db.get_daily_summaries(days=days)
+
+    # Get daily Claude Code usage
+    daily_cc = db.get_claude_code_daily(days=days)
+
+    # Merge by date
+    combined = {}
+    for day in daily_web:
+        date = day["date"]
+        combined[date] = {
+            "date": date,
+            "all_models_pct": day.get("max_all_models", 0),
+            "tokens_claude_code": 0,
+        }
+
+    for day in daily_cc:
+        date = day["date"]
+        if date not in combined:
+            combined[date] = {"date": date, "all_models_pct": 0, "tokens_claude_code": 0}
+        combined[date]["tokens_claude_code"] = day.get("total_tokens", 0)
+
+    return sorted(combined.values(), key=lambda x: x["date"])
+
+
 @app.get("/api/report/monthly")
 async def monthly_report(month: str | None = None):
     """Generate comprehensive monthly report (web + Claude Code)."""
