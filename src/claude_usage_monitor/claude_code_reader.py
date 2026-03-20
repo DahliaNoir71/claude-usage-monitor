@@ -89,11 +89,15 @@ def list_projects(claude_dir: Path) -> list[dict]:
         if not project_dir.is_dir():
             continue
 
-        sessions_dir = project_dir / "sessions"
         session_count = 0
+
+        # Count sessions from both locations
+        sessions_dir = project_dir / "sessions"
         if sessions_dir.exists():
-            # Count .jsonl files (exclude sessions-index.json)
-            session_count = len(list(sessions_dir.glob(JSONL_PATTERN)))
+            session_count += len(list(sessions_dir.glob(JSONL_PATTERN)))
+
+        # Also count .jsonl files directly in project dir (legacy structure)
+        session_count += len(list(project_dir.glob(JSONL_PATTERN)))
 
         projects.append(
             {
@@ -284,12 +288,19 @@ def parse_sessions(claude_dir: Path, days: int = 90) -> Generator[dict, None, No
             continue
 
         project_name = _decode_project_path(project_dir.name)
+
+        # Support both structures:
+        # 1. Modern: project_dir/sessions/*.jsonl
+        # 2. Legacy: project_dir/*.jsonl (directly in project)
+        session_locations = []
         sessions_dir = project_dir / "sessions"
+        if sessions_dir.exists():
+            session_locations.append(sessions_dir)
+        # Also check for .jsonl files directly in project dir
+        session_locations.append(project_dir)
 
-        if not sessions_dir.exists():
-            continue
-
-        for session_file in sessions_dir.glob(JSONL_PATTERN):
+        for session_location in session_locations:
+            for session_file in session_location.glob(JSONL_PATTERN):
             # Skip non-session files
             if session_file.name.startswith("sessions-index"):
                 continue
@@ -487,11 +498,15 @@ def parse_sessions_incremental(
         if not project_dir.is_dir():
             continue
 
+        # Support both structures: sessions/ dir or directly in project dir
+        session_locations = []
         sessions_dir = project_dir / "sessions"
-        if not sessions_dir.exists():
-            continue
+        if sessions_dir.exists():
+            session_locations.append(sessions_dir)
+        session_locations.append(project_dir)
 
-        for session_file in sessions_dir.glob(JSONL_PATTERN):
+        for session_location in session_locations:
+            for session_file in session_location.glob(JSONL_PATTERN):
             session = _process_session_file(session_file, db_module, cutoff)
             if session:
                 yield session
