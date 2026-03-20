@@ -260,6 +260,9 @@ select, input[type="number"] {
     <button class="sidebar-link" data-tab="cycles" onclick="switchTab('cycles')">
       <span class="sidebar-icon">&#8634;</span><span>Cycles</span>
     </button>
+    <button class="sidebar-link" data-tab="plans" onclick="switchTab('plans')">
+      <span class="sidebar-icon">&#9878;</span><span>Plans</span>
+    </button>
     <button class="sidebar-link" data-tab="settings" onclick="switchTab('settings')">
       <span class="sidebar-icon">&#9881;</span><span>Paramètres</span>
     </button>
@@ -395,6 +398,26 @@ select, input[type="number"] {
     </div>
   </div>
 
+  <!-- PLANS -->
+  <div class="section" id="tab-plans">
+    <div class="page-title">Comparateur de plans</div>
+    <div class="settings-panel" style="padding:0;overflow-x:auto">
+      <table id="plansTable" style="font-size:13px">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="settings-panel" style="margin-top:16px">
+      <div class="settings-title">Simulateur</div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span style="font-size:13px;color:var(--text-muted)">Si mon usage augmentait de</span>
+        <input type="range" id="simSlider" min="0" max="200" value="0" oninput="updateSimulator()" style="flex:1;min-width:120px">
+        <span id="simValue" style="font-size:14px;font-weight:600;color:var(--accent);min-width:40px">+0%</span>
+      </div>
+      <div id="simResult" style="margin-top:12px;font-size:13px;color:var(--text-muted)"></div>
+    </div>
+  </div>
+
   <!-- SETTINGS -->
   <div class="section" id="tab-settings">
     <div class="page-title">Paramètres</div>
@@ -483,6 +506,7 @@ async function loadTab(name) {
     if (name === 'overview') await loadOverview();
     else if (name === 'history') await loadHistory();
     else if (name === 'cycles') await loadCycles();
+    else if (name === 'plans') await loadPlans();
     else if (name === 'settings') await loadSettings();
     loadedTabs[name] = true;
   } catch (e) {
@@ -935,6 +959,85 @@ function renderResetsTable(resets) {
 }
 
 // ============================================================
+// PLANS
+// ============================================================
+let plansData = {};
+let plansAnalysis = null;
+
+async function loadPlans() {
+  const [plans, analysis] = await Promise.all([
+    api('/api/plans'),
+    api('/api/analysis'),
+  ]);
+  plansData = plans;
+  plansAnalysis = analysis;
+  renderPlansTable(plans, analysis);
+}
+
+function renderPlansTable(plans, analysis) {
+  const planKeys = Object.keys(plans);
+  const currentPlan = analysis.current_plan || '';
+  const recoPlan = analysis.recommendation ? analysis.recommendation.plan : '';
+  const ms = analysis.monthly_stats || [];
+  const lastMonth = ms.length ? ms[ms.length - 1] : null;
+
+  const priorityLabels = { low: 'Basse', normal: 'Normale', high: 'Haute', highest: 'Maximale' };
+
+  let thead = '<tr><th>Plan</th>';
+  planKeys.forEach(k => {
+    const p = plans[k];
+    const isCurrent = k === currentPlan;
+    const isReco = k === recoPlan;
+    thead += `<th style="${isReco ? 'background:var(--green-soft);color:var(--green)' : isCurrent ? 'background:var(--accent-soft);color:var(--accent)' : ''}">${p.name}${isCurrent ? ' (actuel)' : ''}${isReco && !isCurrent ? ' &#10004;' : ''}</th>`;
+  });
+  thead += '</tr>';
+
+  const rows = [
+    ['Prix/mois', k => '$' + plans[k].price],
+    ['Modèles', k => (plans[k].models || []).join(', ')],
+    ['Extended thinking', k => plans[k].extended_thinking || '&#10005;'],
+    ['Priorité', k => priorityLabels[plans[k].priority] || plans[k].priority],
+  ];
+
+  if (lastMonth) {
+    rows.push(['Ton pic (ce mois)', () => lastMonth.max_all_models + '%']);
+    rows.push(['Ta moyenne (ce mois)', () => lastMonth.avg_all_models + '%']);
+  }
+
+  let tbody = '';
+  rows.forEach(([label, fn]) => {
+    tbody += `<tr><td style="font-weight:500">${label}</td>`;
+    planKeys.forEach(k => {
+      tbody += `<td>${fn(k)}</td>`;
+    });
+    tbody += '</tr>';
+  });
+
+  document.querySelector('#plansTable thead').innerHTML = thead;
+  document.querySelector('#plansTable tbody').innerHTML = tbody;
+}
+
+function updateSimulator() {
+  const pct = parseInt(document.getElementById('simSlider').value);
+  document.getElementById('simValue').textContent = '+' + pct + '%';
+  const ms = plansAnalysis ? plansAnalysis.monthly_stats || [] : [];
+  const lastMonth = ms.length ? ms[ms.length - 1] : null;
+  if (!lastMonth) {
+    document.getElementById('simResult').textContent = 'Pas assez de données pour simuler.';
+    return;
+  }
+  const simPeak = Math.min(100, Math.round(lastMonth.max_all_models * (1 + pct / 100)));
+  const simAvg = Math.min(100, Math.round(lastMonth.avg_all_models * (1 + pct / 100)));
+  let advice = '';
+  if (simPeak <= 30) advice = 'Le plan Pro suffirait largement.';
+  else if (simPeak <= 50) advice = 'Le plan Pro pourrait encore suffire.';
+  else if (simPeak <= 80) advice = 'Le plan Max $100 serait recommandé.';
+  else advice = 'Le plan Max $200 serait recommandé pour éviter les rate-limits.';
+  document.getElementById('simResult').innerHTML =
+    `Pic simulé : <strong>${simPeak}%</strong> &middot; Moyenne simulée : <strong>${simAvg}%</strong><br>${advice}`;
+}
+
+// ============================================================
 // SETTINGS
 // ============================================================
 let settingsCache = {};
@@ -1059,7 +1162,7 @@ function timeSince(date) {
 // ============================================================
 (function init() {
   const hash = location.hash.replace('#', '') || 'overview';
-  const validTabs = ['overview', 'history', 'cycles', 'settings'];
+  const validTabs = ['overview', 'history', 'cycles', 'plans', 'settings'];
   const tab = validTabs.includes(hash) ? hash : 'overview';
 
   // Load overview + settings eagerly

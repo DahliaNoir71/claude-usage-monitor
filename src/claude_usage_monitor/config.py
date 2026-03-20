@@ -57,10 +57,22 @@ CHROME_USER_DATA_DIR = None
 
 # Plans
 PLANS = {
-    "free": {"name": "Free", "price": 0, "description": "Accès limité"},
-    "pro": {"name": "Pro", "price": 20, "description": "Usage standard"},
-    "max_100": {"name": "Max $100", "price": 100, "description": "5x plus de messages, extended thinking"},
-    "max_200": {"name": "Max $200", "price": 200, "description": "20x plus de messages, priorité max"},
+    "free": {
+        "name": "Free", "price": 0, "description": "Accès limité",
+        "models": ["sonnet", "haiku"], "extended_thinking": False, "priority": "low",
+    },
+    "pro": {
+        "name": "Pro", "price": 20, "description": "Usage standard",
+        "models": ["opus", "sonnet", "haiku"], "extended_thinking": "10 min", "priority": "normal",
+    },
+    "max_100": {
+        "name": "Max $100", "price": 100, "description": "5x plus de messages, extended thinking",
+        "models": ["opus", "sonnet", "haiku"], "extended_thinking": "45 min", "priority": "high",
+    },
+    "max_200": {
+        "name": "Max $200", "price": 200, "description": "20x plus de messages, priorité max",
+        "models": ["opus", "sonnet", "haiku"], "extended_thinking": "45 min", "priority": "highest",
+    },
 }
 
 DEFAULT_CONFIG = {
