@@ -16,6 +16,22 @@ const APP = {
 
     // Set up auto-refresh
     this.startAutoRefresh();
+
+    // Check extension status for sidebar dot (initial + periodic refresh every 60s)
+    this.refreshExtensionDot();
+    setInterval(() => this.refreshExtensionDot(), 60_000);
+  },
+
+  refreshExtensionDot() {
+    fetch('/api/session').then(r => r.json()).then(s => {
+      const dot = document.getElementById('extensionDot');
+      if (dot) {
+        dot.style.background = s.authenticated
+          ? (s.stale ? 'var(--amber)' : 'var(--green)')
+          : 'var(--red)';
+        dot.title = s.authenticated ? 'Extension connectée' : 'Extension non connectée';
+      }
+    }).catch(() => {});
   },
 
   async switchTab(tabName) {
@@ -69,7 +85,7 @@ const APP = {
 
   async loadModule(tabName) {
     try {
-      const response = await fetch(`/static/modules/${tabName}.html`);
+      const response = await fetch(`/static/modules/${tabName}.html`, { cache: 'no-cache' });
       if (!response.ok) throw new Error(`Failed to load ${tabName}`);
       this.loadedModules[tabName] = await response.text();
     } catch (error) {

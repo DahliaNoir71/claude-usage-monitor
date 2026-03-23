@@ -166,7 +166,7 @@ async function loadOverview() {
     <div class="card">
       <div class="card-label">Jours actifs</div>
       <div class="card-value accent">${currentMonth ? currentMonth.active_days : 0}</div>
-      <div class="card-sub">${currentMonth ? currentMonth.entries_count : 0} mesures ce mois</div>
+      <div class="card-sub">${currentMonth ? currentMonth.entries_count : 0} ${(currentMonth?.entries_count ?? 0) > 1 ? 'mesures' : 'mesure'} ce mois</div>
     </div>
     <div class="card">
       <div class="card-label">Tendance</div>
@@ -488,6 +488,7 @@ function renderCombinedTimeline(data) {
           type: 'linear',
           display: true,
           position: 'right',
+          min: 0,
           title: { display: true, text: 'Claude Code (tokens relatifs)', color: C.tick },
           ticks: { color: C.tick },
           grid: { drawOnChartArea: false },
@@ -506,7 +507,7 @@ function renderCombinedTimeline(data) {
 // ============================================================
 async function loadHistory() {
   const entries = await api('/api/entries');
-  document.getElementById('historyCount').textContent = entries.length + ' entrées';
+  document.getElementById('historyCount').textContent = entries.length + (entries.length > 1 ? ' entrées' : ' entrée');
   renderHistoryChart(entries);
   renderEntriesTable(entries);
 }
@@ -584,7 +585,7 @@ function renderEntriesPage() {
 
   const pagEl = document.getElementById('historyPagination');
   if (totalPages <= 1) {
-    pagEl.innerHTML = `<span>${total} entrées</span>`;
+    pagEl.innerHTML = `<span>${total} ${total > 1 ? 'entrées' : 'entrée'}</span>`;
     return;
   }
   let pagHtml = `<button class="btn" onclick="APP_STATE.historyPage=Math.max(1,APP_STATE.historyPage-1);renderEntriesPage()" ${APP_STATE.historyPage<=1?'disabled':''}>&#8592; Préc.</button>`;
@@ -596,7 +597,7 @@ function renderEntriesPage() {
     pagHtml += `<button class="btn${p===APP_STATE.historyPage?' btn-accent':''}" onclick="APP_STATE.historyPage=${p};renderEntriesPage()" style="min-width:32px">${p}</button>`;
   }
   pagHtml += `<button class="btn" onclick="APP_STATE.historyPage=Math.min(${totalPages},APP_STATE.historyPage+1);renderEntriesPage()" ${APP_STATE.historyPage>=totalPages?'disabled':''}>Suiv. &#8594;</button>`;
-  pagHtml += `<span style="margin-left:8px">Page ${APP_STATE.historyPage}/${totalPages} — ${total} entrées</span>`;
+  pagHtml += `<span style="margin-left:8px">Page ${APP_STATE.historyPage}/${totalPages} — ${total} ${total > 1 ? 'entrées' : 'entrée'}</span>`;
   pagEl.innerHTML = pagHtml;
 }
 
@@ -885,6 +886,12 @@ async function loadSettings() {
       <div><div class="setting-label">Lancer au démarrage</div><div class="setting-desc">Démarrer automatiquement avec Windows</div></div>
       <label class="toggle"><input type="checkbox" id="cfg-startup" ${config.launch_at_startup?'checked':''} onchange="APP_STATE.settingsCache.launch_at_startup=this.checked"><span class="toggle-slider"></span></label>
     </div>
+    <div style="margin:16px 0 8px;font-weight:600;color:var(--accent);border-top:1px solid var(--border);padding-top:16px">
+      Extension Chrome Bridge
+    </div>
+    <div id="extensionStatus" style="margin-bottom:12px;font-size:13px;color:var(--text-muted)">
+      Vérification…
+    </div>
   `;
 
   document.getElementById('appInfo').innerHTML = `
@@ -892,6 +899,21 @@ async function loadSettings() {
     Entrées : ${status.entries_count}<br>
     Répertoire : <code style="font-family:var(--mono);font-size:12px;color:var(--accent)">${status.data_dir || '-'}</code>
   `;
+
+  // Vérifier le statut de l'extension Chrome
+  api('/api/session').then(session => {
+    const el = document.getElementById('extensionStatus');
+    if (!el) return;
+    if (session.authenticated) {
+      const lastData = session.last_data ? new Date(session.last_data).toLocaleString('fr') : 'N/A';
+      el.innerHTML = `<span style="color:var(--green)">✓ Extension connectée</span> — dernière donnée : ${lastData}`;
+      if (session.stale) {
+        el.innerHTML += '<br><span style="color:var(--amber)">⚠ Données obsolètes (&gt; 1h). Vérifie que l\'extension est active.</span>';
+      }
+    } else {
+      el.innerHTML = '<span style="color:var(--red)">✗ Pas de données de l\'extension Chrome.</span><br>Charge l\'extension depuis <code>extension/</code> pour collecter les données automatiquement.';
+    }
+  }).catch(() => {});
 }
 
 async function saveSettings() {
@@ -1181,21 +1203,13 @@ function renderClaudeCodeSessions(sessions) {
 // ============================================================
 // Actions
 // ============================================================
-async function triggerScrape(btn) {
-  btn.textContent = 'Scraping...';
+function triggerScrape(btn) {
+  btn.textContent = 'Géré par l\'extension Chrome';
   btn.disabled = true;
-  try {
-    const r = await api('/api/scrape', { method: 'POST' });
-    btn.textContent = r.success ? 'OK !' : 'Echec';
-    if (r.success) {
-      loadHistory();
-      loadOverview();
-      loadCycles();
-    }
-  } catch (e) {
-    btn.textContent = 'Erreur';
-  }
-  setTimeout(() => { btn.textContent = 'Scraper maintenant'; btn.disabled = false; }, 2000);
+  setTimeout(() => {
+    btn.textContent = 'Rafraîchir (via extension)';
+    btn.disabled = false;
+  }, 2000);
 }
 
 async function importCSV() {
@@ -1205,7 +1219,7 @@ async function importCSV() {
   form.append('file', file);
   try {
     const r = await api('/api/import/csv', { method: 'POST', body: form });
-    alert(r.imported + ' entrées importées');
+    alert(r.imported + (r.imported > 1 ? ' entrées importées' : ' entrée importée'));
     loadHistory();
   } catch (e) {
     alert('Erreur d\'import');
@@ -1215,6 +1229,8 @@ async function importCSV() {
 async function clearData() {
   await api('/api/clear', { method: 'POST' });
   loadOverview();
+  loadHistory();
+  loadCycles();
 }
 
 async function deleteEntry(id, btn) {

@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -16,6 +17,15 @@ from .config import APP_NAME, APP_VERSION, DATA_DIR, PLANS, STATIC_DIR, load_con
 logger = logging.getLogger("monitor.server")
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION)
+
+# CORS — allow Chrome extension and local dashboard
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^chrome-extension://.*$",
+    allow_origins=["http://127.0.0.1:8420"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["*"],
+)
 
 # Mount static files (CSS, JS, module HTML)
 if STATIC_DIR.exists():
@@ -34,12 +44,19 @@ class ConfigUpdate(BaseModel):
     alert_sonnet_threshold: int | None = None
     alert_on_reset: bool | None = None
     alert_cooldown_minutes: int | None = None
-    chrome_user_data_dir: str | None = None
-    chrome_profile: str | None = None
     launch_at_startup: bool | None = None
     claude_code_scan_enabled: bool | None = None
     claude_code_dir: str | None = None
     claude_code_scan_interval_minutes: int | None = None
+
+
+class BridgeUsageData(BaseModel):
+    all_models_pct: int
+    sonnet_pct: int = 0
+    session_utilization: int = 0
+    reset_all_models: str | None = None
+    reset_sonnet: str | None = None
+    session_reset: str | None = None
 
 
 class ManualEntry(BaseModel):
@@ -63,7 +80,6 @@ async def dashboard():
 
 @app.get("/api/status")
 async def status():
-    from .scraper import last_scrape_info
     config = load_config()
     return {
         "app": APP_NAME,
@@ -72,9 +88,7 @@ async def status():
         "entries_count": db.entry_count(),
         "latest": db.get_latest_entry(),
         "data_dir": str(DATA_DIR),
-        "last_scrape_status": last_scrape_info.get("status"),
-        "last_scrape_error": last_scrape_info.get("error"),
-        "last_scrape_timestamp": last_scrape_info.get("timestamp"),
+        "source": "chrome_extension",
     }
 
 
@@ -163,21 +177,52 @@ async def get_plans():
     return PLANS
 
 
-@app.post("/api/scrape")
-async def trigger_scrape():
-    from .scraper import scrape_usage_simple
+@app.get("/api/session")
+async def session_status():
+    """Statut de la connexion via l'extension Chrome bridge."""
+    from datetime import datetime
+    latest = db.get_latest_entry()
+    if latest and latest.get("source") == "chrome_extension":
+        try:
+            last_ts = datetime.fromisoformat(latest["timestamp"])
+            age_minutes = (datetime.now() - last_ts).total_seconds() / 60
+        except Exception:
+            age_minutes = 0
+        return {
+            "authenticated": True,
+            "source": "chrome_extension",
+            "last_data": latest["timestamp"],
+            "stale": age_minutes > 60,
+        }
+    return {
+        "authenticated": False,
+        "source": None,
+        "message": "Aucune donnée reçue de l'extension Chrome.",
+    }
 
-    result = await scrape_usage_simple(headless=True, timeout=30)
-    if result and result.get("allModels") is not None:
-        entry_id = db.add_entry(
-            all_models_pct=result["allModels"],
-            sonnet_pct=result.get("sonnet", 0) or 0,
-            reset_all_models=result.get("allModelsResetIn"),
-            reset_sonnet=result.get("sonnetResetIn"),
-            source="manual_scrape",
-        )
-        return {"success": True, "data": result, "entry_id": entry_id}
-    return {"success": False, "error": "Scraping failed. Check browser session."}
+
+@app.post("/api/bridge/usage")
+async def receive_bridge_data(data: BridgeUsageData):
+    """Reçoit les données d'usage depuis l'extension Chrome bridge."""
+    entry_id = db.add_entry(
+        all_models_pct=data.all_models_pct,
+        sonnet_pct=data.sonnet_pct,
+        reset_all_models=data.reset_all_models,
+        reset_sonnet=data.reset_sonnet,
+        source="chrome_extension",
+    )
+    logger.info(
+        f"Bridge data received: allModels={data.all_models_pct}%, "
+        f"sonnet={data.sonnet_pct}%, session={data.session_utilization}%"
+    )
+
+    from .main import _check_alerts
+    _check_alerts({
+        "allModels": data.all_models_pct,
+        "sonnet": data.sonnet_pct,
+    })
+
+    return {"success": True, "entry_id": entry_id}
 
 
 @app.get("/api/export/csv")

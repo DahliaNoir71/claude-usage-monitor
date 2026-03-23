@@ -7,7 +7,7 @@ import platform
 from pathlib import Path
 
 APP_NAME = "Claude Usage Monitor"
-APP_VERSION = "2.1.0"
+APP_VERSION = "3.0.0"
 
 # Paths
 _PKG_DIR = Path(__file__).parent
@@ -46,14 +46,7 @@ EXPORT_DIR.mkdir(exist_ok=True)
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 8420
 
-# Scraping
-SCRAPE_URL = "https://claude.ai/settings/usage"
 SCRAPE_INTERVAL_MINUTES = 30
-SCRAPE_TIMEOUT_SECONDS = 30
-PLAYWRIGHT_HEADLESS = True
-
-# Browser profile
-CHROME_USER_DATA_DIR = None
 
 # Model pricing (USD per 1M tokens)
 # Updated 2026-03-20 - verify against https://www.anthropic.com/pricing
@@ -114,8 +107,6 @@ DEFAULT_CONFIG = {
     "alert_sonnet_threshold": 80,
     "alert_on_reset": True,
     "alert_cooldown_minutes": 60,
-    "chrome_user_data_dir": None,
-    "chrome_profile": "Default",
     "launch_at_startup": False,
     "claude_code_scan_enabled": True,
     "claude_code_dir": None,  # Auto-detect if None

@@ -103,6 +103,8 @@ def _get_model_pricing(model_id: str) -> dict:
 
     Example: "claude-sonnet-4-20250514" matches "claude-sonnet-4"
     """
+    if model_id == "<synthetic>":
+        return {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}
     for model_key, pricing in MODEL_PRICING.items():
         if model_id.startswith(model_key):
             return pricing

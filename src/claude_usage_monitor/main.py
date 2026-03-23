@@ -2,7 +2,6 @@
 Claude Usage Monitor - Main Entry Point
 System tray app + scraper scheduler + dashboard server.
 """
-import asyncio
 import logging
 import os
 import shutil
@@ -39,6 +38,9 @@ logger = logging.getLogger("monitor")
 # ── Scheduler ───────────────────────────────────────────────────────────────
 
 class ScrapeScheduler:
+    """Scheduler pour les tâches périodiques (scan Claude Code uniquement).
+    Le scraping web est désormais géré par l'extension Chrome."""
+
     def __init__(self):
         self._running = False
         self._thread: threading.Thread | None = None
@@ -47,16 +49,16 @@ class ScrapeScheduler:
         self._running = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
-        logger.info("Scrape scheduler started")
+        logger.info("Scheduler started (Claude Code scan only)")
 
     def stop(self):
         self._running = False
-        logger.info("Scrape scheduler stopped")
+        logger.info("Scheduler stopped")
 
     def _loop(self):
         import time
 
-        # Initial delay: wait 60s before first scrape to avoid blocking startup
+        # Initial delay: wait 60s before first scan
         for _ in range(60):
             if not self._running:
                 return
@@ -64,49 +66,26 @@ class ScrapeScheduler:
 
         while self._running:
             config = load_config()
-            interval = config.get("scrape_interval_minutes", 30) * 60
+            interval = config.get("claude_code_scan_interval_minutes", 30) * 60
 
-            if config.get("auto_scrape", True):
+            if config.get("claude_code_scan_enabled", True):
                 try:
-                    asyncio.run(self._do_scrape())
+                    _scan_claude_code()
                 except Exception as e:
-                    logger.error(f"Scheduled scrape failed: {e}")
+                    logger.error(f"Claude Code scan failed: {e}")
 
-                if config.get("auto_export_csv", False):
-                    try:
-                        filepath = db.export_csv()
-                        if filepath:
-                            logger.info(f"Auto-exported CSV: {filepath}")
-                    except Exception as e:
-                        logger.error(f"Auto-export failed: {e}")
+            if config.get("auto_export_csv", False):
+                try:
+                    filepath = db.export_csv()
+                    if filepath:
+                        logger.info(f"Auto-exported CSV: {filepath}")
+                except Exception as e:
+                    logger.error(f"Auto-export failed: {e}")
 
             for _ in range(int(interval)):
                 if not self._running:
                     return
                 time.sleep(1)
-
-    async def _do_scrape(self):
-        from .scraper import scrape_usage_simple
-
-        logger.info("Running scheduled scrape...")
-        result = await scrape_usage_simple(headless=True, timeout=30)
-        if result and result.get("allModels") is not None:
-            db.add_entry(
-                all_models_pct=result["allModels"],
-                sonnet_pct=result.get("sonnet", 0) or 0,
-                reset_all_models=result.get("allModelsResetIn"),
-                reset_sonnet=result.get("sonnetResetIn"),
-                source="auto_scrape",
-            )
-            logger.info(f"Scrape OK: All Models={result['allModels']}%")
-            _check_alerts(result)
-        else:
-            logger.warning("Scrape returned no data")
-
-        # Also scan Claude Code sessions after web scrape
-        config = load_config()
-        if config.get("claude_code_scan_enabled", True):
-            _scan_claude_code()
 
 
 def _scan_claude_code():
@@ -235,17 +214,6 @@ def _create_tray_icon(scheduler: ScrapeScheduler):
     def open_dashboard(*_):
         webbrowser.open(f"http://{SERVER_HOST}:{SERVER_PORT}")
 
-    def scrape_now(*_):
-        def _run():
-            try:
-                logger.info("Manual scrape triggered from tray menu")
-                asyncio.run(scheduler._do_scrape())
-                _send_notification("Scrape terminé", "Données mises à jour.")
-            except Exception as e:
-                logger.error(f"Tray scrape failed: {e}")
-                _send_notification("Scrape échoué", str(e))
-        threading.Thread(target=_run, daemon=True).start()
-
     def scan_claude_code_now(*_):
         def _run():
             try:
@@ -272,7 +240,6 @@ def _create_tray_icon(scheduler: ScrapeScheduler):
     menu = pystray.Menu(
         pystray.MenuItem("Ouvrir le dashboard", open_dashboard, default=True),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Scraper maintenant", scrape_now),
         pystray.MenuItem("Scanner Claude Code", scan_claude_code_now),
         pystray.MenuItem("Exporter CSV", export_csv),
         pystray.Menu.SEPARATOR,
@@ -517,7 +484,6 @@ def _run_diagnose():
     for name, module in [
         ("uvicorn", "uvicorn"),
         ("fastapi", "fastapi"),
-        ("playwright", "playwright"),
         ("pystray", "pystray"),
         ("Pillow", "PIL"),
     ]:
@@ -526,18 +492,6 @@ def _run_diagnose():
             print(f"[OK]   {name}")
         except ImportError:
             print(f"[FAIL] {name} -- not installed")
-
-    # Playwright browsers
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            path = p.chromium.executable_path
-            if path and Path(path).exists():
-                print(f"[OK]   Playwright Chromium")
-            else:
-                print("[WARN] Playwright Chromium not found. Run: playwright install chromium")
-    except Exception:
-        print("[WARN] Playwright browser check failed")
 
     # Port availability
     try:
