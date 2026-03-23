@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Claude Usage Monitor Bridge",
+  "version": "3.0.0",
+  "description": "Collecte automatiquement les données d'usage claude.ai et les envoie au dashboard local.",
+  "permissions": [
+    "cookies",
+    "alarms",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://claude.ai/*",
+    "http://127.0.0.1:8420/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

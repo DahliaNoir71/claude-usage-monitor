@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Usage Monitor</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <span class="logo">Claude Monitor</span>
+    <span id="connectionDot" class="dot dot-unknown" title="Statut connexion"></span>
+  </div>
+
+  <div id="statusBar" class="status-bar status-loading">Chargement…</div>
+
+  <div id="dataSection" class="data-section" style="display:none">
+    <div class="metric-row">
+      <span class="metric-label">Tous modèles (7j)</span>
+      <span id="allModelsPct" class="metric-value">—</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">Sonnet (7j)</span>
+      <span id="sonnetPct" class="metric-value">—</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">Session (5h)</span>
+      <span id="sessionPct" class="metric-value">—</span>
+    </div>
+    <div class="reset-row">
+      <span id="resetAllModels" class="reset-text"></span>
+    </div>
+    <div id="timestampRow" class="timestamp"></div>
+  </div>
+
+  <div class="separator"></div>
+
+  <div class="interval-row">
+    <span class="interval-label">Intervalle</span>
+    <select id="intervalSelect" class="interval-select">
+      <option value="15">15 min</option>
+      <option value="30" selected>30 min</option>
+      <option value="60">60 min</option>
+    </select>
+  </div>
+
+  <div class="buttons">
+    <button id="btnRefresh" class="btn btn-accent">Rafraîchir</button>
+    <button id="btnDashboard" class="btn btn-secondary">Dashboard ↗</button>
+  </div>
+
+  <div id="backendStatus" class="backend-status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
